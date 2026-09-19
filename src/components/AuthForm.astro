@@ -1,0 +1,30 @@
+---
+export interface Props {
+  mode: 'login' | 'signup' | 'forgot';
+}
+
+const { mode } = Astro.props;
+const apiBaseUrl = import.meta.env.PUBLIC_API_BASE_URL ?? '';
+const alternate = {
+  login: { prefix: 'Need an account?', label: 'Sign up', href: '/signup' },
+  signup: { prefix: 'Already have an account?', label: 'Sign in', href: '/login' },
+  forgot: { prefix: 'Remembered it?', label: 'Go back', href: '/login' },
+}[mode];
+---
+<section class="auth-card" data-auth-shell>
+  <auth-form mode={mode} public-api-base-url={apiBaseUrl}></auth-form>
+  <p class="form-status" data-form-status hidden role="status">The form is valid. Account services are not connected yet, so nothing was sent.</p>
+  {mode === 'login' && <a class="text-link recovery-link" href="/forgot-password">Forgot your password?</a>}
+  <p class="auth-alternate">{alternate.prefix} <a href={alternate.href}>{alternate.label}</a></p>
+</section>
+
+<script>
+  import './auth/auth-form';
+
+  document.querySelectorAll<HTMLElement>('[data-auth-shell]').forEach((shell) => {
+    shell.addEventListener('auth-email-submit', () => {
+      const status = shell.querySelector<HTMLElement>('[data-form-status]');
+      if (status) status.hidden = false;
+    });
+  });
+</script>

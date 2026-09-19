@@ -1,0 +1,45 @@
+---
+export interface Props {
+  title: string;
+  description?: string;
+  eyebrow?: string;
+}
+
+const { title, description = 'A calm, keyboard-first workspace for organizing ideas.', eyebrow = 'Voronoi Organizer' } = Astro.props;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <title>{title} · Voronoi Organizer</title>
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <a class="brand" href="/home" aria-label="Voronoi Organizer home">
+          <span class="brand-mark" aria-hidden="true">V</span>
+          <span>{eyebrow}</span>
+        </a>
+        <nav aria-label="Main navigation">
+          <a href="/home">Overview</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a class="nav-cta" href="/login">Sign in</a>
+        </nav>
+      </header>
+      <main>
+        <slot />
+      </main>
+      <footer class="site-footer">
+        <span>© {new Date().getFullYear()} Voronoi Organizer</span>
+        <span class="footer-links"><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="mailto:hello@example.com">Contact</a></span>
+      </footer>
+    </div>
+  </body>
+</html>
+
+<style is:global>
+  @import '../styles/site.css';
+</style>

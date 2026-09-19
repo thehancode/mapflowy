@@ -1,0 +1,37 @@
+import type { Point, Polygon } from './types';
+
+export type ViewportEdge = 'top' | 'right' | 'bottom' | 'left';
+
+export function circleLayout(count: number): Point[] {
+  if (count <= 0) return [];
+  if (count === 1) return [{ x: .5, y: .5 }];
+  const radius = count === 2 ? .27 : Math.min(.38, .29 + count * .008);
+  return Array.from({ length: count }, (_, index) => { const angle = -Math.PI / 2 + index * Math.PI * 2 / count; return { x: .5 + Math.cos(angle) * radius, y: .5 + Math.sin(angle) * radius }; });
+}
+export function clipPolygon(polygon: Polygon, nx: number, ny: number, constant: number): Polygon {
+  const output: Point[] = [];
+  for (let i = 0; i < polygon.length; i += 1) {
+    const current = polygon[i], previous = polygon[(i + polygon.length - 1) % polygon.length];
+    const inside = (point: Point) => point.x * nx + point.y * ny <= constant + 1e-7;
+    const currentInside = inside(current), previousInside = inside(previous);
+    if (currentInside !== previousInside) { const dx = current.x - previous.x, dy = current.y - previous.y, denominator = dx * nx + dy * ny; if (Math.abs(denominator) > 1e-9) { const amount = (constant - previous.x * nx - previous.y * ny) / denominator; output.push({ x: previous.x + amount * dx, y: previous.y + amount * dy }); } }
+    if (currentInside) output.push(current);
+  }
+  return output;
+}
+export function voronoiPolygons<T extends Point & { id: string }>(sites: T[], width: number, height: number): Polygon[] {
+  return sites.map((site) => { let polygon: Polygon = [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: height }, { x: 0, y: height }]; sites.forEach((other) => { if (site.id === other.id) return; const nx = other.x - site.x, ny = other.y - site.y; polygon = clipPolygon(polygon, nx, ny, (other.x ** 2 + other.y ** 2 - site.x ** 2 - site.y ** 2) / 2); }); return polygon; });
+}
+export function viewportEdges(polygon: Polygon, width: number, height: number, epsilon = 1): ViewportEdge[] {
+  const edges: ViewportEdge[] = [];
+  const hasSpan = (points: Point[], axis: 'x' | 'y') => points.length >= 2 && Math.max(...points.map((point) => point[axis])) - Math.min(...points.map((point) => point[axis])) > epsilon;
+  if (hasSpan(polygon.filter(({ y }) => y <= epsilon), 'x')) edges.push('top');
+  if (hasSpan(polygon.filter(({ x }) => x >= width - epsilon), 'y')) edges.push('right');
+  if (hasSpan(polygon.filter(({ y }) => y >= height - epsilon), 'x')) edges.push('bottom');
+  if (hasSpan(polygon.filter(({ x }) => x <= epsilon), 'y')) edges.push('left');
+  return edges;
+}
+export function polygonArea(points: Polygon): number { return Math.abs(points.reduce((sum, point, i) => { const next = points[(i + 1) % points.length]; return sum + point.x * next.y - next.x * point.y; }, 0) / 2); }
+export function polygonCentroid(points: Polygon): Point { if (points.length < 3) return points[0] ?? { x: 0, y: 0 }; let crossSum = 0, x = 0, y = 0; points.forEach((point, i) => { const next = points[(i + 1) % points.length], cross = point.x * next.y - next.x * point.y; crossSum += cross; x += (point.x + next.x) * cross; y += (point.y + next.y) * cross; }); return Math.abs(crossSum) < 1e-9 ? points[0] : { x: x / (3 * crossSum), y: y / (3 * crossSum) }; }
+export function fitLabel(name: string, maxWidth: number): { text: string; size: number } { const text = name.length > 28 ? `${name.slice(0, 26)}…` : name; return { text, size: Math.max(11, Math.min(18, maxWidth / Math.max(text.length * .58, 1))) }; }
+export function radialLinkPath(source: { x: number; y: number; angle: number; radius: number }, target: typeof source, centerX: number, centerY: number, outerRadiusX: number, outerRadiusY: number): string { const middle = (source.radius + target.radius) / 2; return `M ${source.x.toFixed(2)} ${source.y.toFixed(2)} C ${(centerX + Math.cos(source.angle) * middle * outerRadiusX).toFixed(2)} ${(centerY + Math.sin(source.angle) * middle * outerRadiusY).toFixed(2)}, ${(centerX + Math.cos(target.angle) * middle * outerRadiusX).toFixed(2)} ${(centerY + Math.sin(target.angle) * middle * outerRadiusY).toFixed(2)}, ${target.x.toFixed(2)} ${target.y.toFixed(2)}`; }

@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Astro-generated files
+.astro/
+dist/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# OS/editor files
+.DS_Store
+.vscode/
+.idea/

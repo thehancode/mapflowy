@@ -1,0 +1,22 @@
+---
+const title = "Voronoi Organizer";
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="A full-screen, keyboard-first hierarchical organizer." />
+    <title>{title}</title>
+  </head>
+  <body>
+    <organizer-app></organizer-app>
+    <script>
+      import "../components/organizer/organizer-app";
+    </script>
+  </body>
+</html>
+
+<style is:global>
+  html, body { margin: 0; min-width: 320px; height: 100%; overflow: hidden; background: #e8e7de; }
+</style>
