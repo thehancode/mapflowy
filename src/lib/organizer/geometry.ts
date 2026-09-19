@@ -2,7 +2,7 @@ import type { Point, Polygon } from './types';
 
 export type ViewportEdge = 'top' | 'right' | 'bottom' | 'left';
 
-export function roundedPolygonPath(points: Polygon, radius = 24): string {
+function polygonPath(points: Polygon, radius: number, shouldRound: (point: Point) => boolean): string {
   if (points.length < 3) return '';
   const toward = (from: Point, to: Point) => {
     const length = Math.hypot(to.x - from.x, to.y - from.y);
@@ -10,10 +10,36 @@ export function roundedPolygonPath(points: Polygon, radius = 24): string {
     return `${from.x + (to.x - from.x) * fraction} ${from.y + (to.y - from.y) * fraction}`;
   };
   return points.map((point, index) => {
+    if (!shouldRound(point)) return `${index ? 'L' : 'M'} ${point.x} ${point.y}`;
     const previous = points[(index + points.length - 1) % points.length];
     const next = points[(index + 1) % points.length];
     return `${index ? 'L' : 'M'} ${toward(point, previous)} Q ${point.x} ${point.y} ${toward(point, next)}`;
   }).join(' ') + ' Z';
+}
+
+export function roundedPolygonPath(points: Polygon, radius = 24): string {
+  return polygonPath(points, radius, () => true);
+}
+
+export function viewportEdgeOverlayPath(polygon: Polygon, edges: readonly ViewportEdge[], width: number, height: number, thickness = 80, radius = 12): string {
+  if (!edges.length) return '';
+  const edgeSet = new Set(edges);
+  let interior = polygon;
+  if (edgeSet.has('top')) interior = clipPolygon(interior, 0, -1, -thickness);
+  if (edgeSet.has('right')) interior = clipPolygon(interior, 1, 0, width - thickness);
+  if (edgeSet.has('bottom')) interior = clipPolygon(interior, 0, 1, height - thickness);
+  if (edgeSet.has('left')) interior = clipPolygon(interior, -1, 0, -thickness);
+  if (interior.length < 3 || polygonArea(interior) < 1) return roundedPolygonPath(polygon, radius);
+
+  const epsilon = 1e-5;
+  const isInnerCorner = (point: Point) => {
+    const onVerticalInset = edgeSet.has('left') && Math.abs(point.x - thickness) <= epsilon
+      || edgeSet.has('right') && Math.abs(point.x - (width - thickness)) <= epsilon;
+    const onHorizontalInset = edgeSet.has('top') && Math.abs(point.y - thickness) <= epsilon
+      || edgeSet.has('bottom') && Math.abs(point.y - (height - thickness)) <= epsilon;
+    return onVerticalInset && onHorizontalInset;
+  };
+  return `${roundedPolygonPath(polygon, radius)} ${polygonPath(interior, radius, isInnerCorner)}`;
 }
 
 export function viewportEdgeBand(polygon: Polygon, edge: ViewportEdge, width: number, height: number, thickness = 80): Polygon {

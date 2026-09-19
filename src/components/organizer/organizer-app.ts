@@ -5,7 +5,7 @@ import type { OrganizerNode, Point, LayoutEntry, OrganizerTheme } from "../../li
 import {
   circleLayout, createRepository, createUserConfigRepository, findEntry, flattenTree, fitLabel, newNodeId,
   polygonArea, polygonCentroid, radialLinkPath, radialTreeLayout, roundedPolygonPath, visibleItems,
-  viewportEdgeBand, viewportEdges, viewportEdgeSpan, voronoiPathForSelection, voronoiPolygons,
+  viewportEdgeBand, viewportEdgeOverlayPath, viewportEdges, viewportEdgeSpan, voronoiPathForSelection, voronoiPolygons,
 } from "../../lib/organizer";
 import type { OrganizerView } from "./view-switcher";
 
@@ -61,7 +61,7 @@ export class OrganizerApp extends LitElement {
     .cell-outline { fill: none; stroke: var(--cell-gap); stroke-width: 12; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
     .cell-label { fill: var(--ink); font-weight: 760; text-anchor: middle; cursor: text; user-select: none; paint-order: stroke; stroke: var(--cell-gap); stroke-width: 3px; stroke-linejoin: round; }
     .dot { fill: color-mix(in srgb, var(--ink) 48%, transparent); pointer-events: none; }
-    .selection { fill: none; stroke: var(--ink); stroke-width: 4; vector-effect: non-scaling-stroke; pointer-events: none; }
+    .selection { fill: none; stroke: var(--ink); stroke-width: 20; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
     .edge-bands { cursor: cell; outline: none; }
     .edge-strip { fill: var(--edge-overlay); stroke: none; transition: fill .14s ease; }
     .edge-bands:hover .edge-strip, .edge-bands:focus-visible .edge-strip { fill: var(--edge-overlay-hover); }
@@ -377,18 +377,17 @@ export class OrganizerApp extends LitElement {
           band: viewportEdgeBand(polygon, edge, this.width, this.height),
           span: viewportEdgeSpan(polygon, edge, this.width, this.height),
         })).filter(({ band }) => polygonArea(band) >= 1);
-        const markerEdge = edgeSections.reduce((longest, section) => section.span > longest.span ? section : longest, edgeSections[0])?.edge;
+        const markerSection = edgeSections.length ? edgeSections.reduce((longest, section) => section.span > longest.span ? section : longest) : undefined;
         const activateEdge = (event: Event) => { event.preventDefault(); event.stopPropagation(); this.openVoronoiNodeAndAddChild(item); };
         return svg`<g class="cell" role="option" aria-selected=${selected} @click=${() => this.select(item.id)} @dblclick=${() => this.openVoronoiNode(item)}>
           <path class="cell-shape" d=${roundedPolygonPath(polygon)} fill=${palette[hashString(item.id) % palette.length]}></path>
           <circle class="dot" cx=${sites[index].x} cy=${sites[index].y} r="3"></circle>
-          ${edgeSections.length ? svg`<g class="edge-bands" role="button" tabindex="0" aria-label=${`Open ${item.name} and add a child`} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}>${edgeSections.map(({ edge, band }) => {
-            const marker = polygonCentroid(band);
-            const points = band.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
-            return svg`<polygon class="edge-strip" points=${points}></polygon>${edge === markerEdge ? svg`<text class="add-child-sign" x=${marker.x} y=${marker.y} aria-hidden="true">+</text>` : nothing}`;
-          })}</g>` : nothing}
+          ${edgeSections.length ? svg`<g class="edge-bands" role="button" tabindex="0" aria-label=${`Open ${item.name} and add a child`} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}><path class="edge-strip" fill-rule="evenodd" d=${viewportEdgeOverlayPath(polygon, edges, this.width, this.height)}></path>${markerSection ? (() => {
+            const marker = polygonCentroid(markerSection.band);
+            return svg`<text class="add-child-sign" x=${marker.x} y=${marker.y} aria-hidden="true">+</text>`;
+          })() : nothing}</g>` : nothing}
+          ${selected ? svg`<path class="selection" d=${roundedPolygonPath(polygon)} clip-path=${`url(#edge-cell-${index})`}></path>` : nothing}
           <path class="cell-outline" d=${roundedPolygonPath(polygon)}></path>
-          ${selected ? svg`<path class="selection" d=${roundedPolygonPath(polygon)}></path>` : nothing}
           ${item.id !== this.draft?.id ? svg`<text class="cell-label" x=${center.x} y=${center.y} font-size=${label.size} dy=".35em" @dblclick=${(event: MouseEvent) => { event.stopPropagation(); this.beginEdit(item.id); }}>${label.text}</text>` : nothing}
         </g>`;
       })}
