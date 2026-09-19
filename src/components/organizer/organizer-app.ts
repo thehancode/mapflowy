@@ -4,8 +4,8 @@ import "./view-switcher";
 import type { OrganizerNode, Point, LayoutEntry, OrganizerTheme } from "../../lib/organizer";
 import {
   circleLayout, createRepository, createUserConfigRepository, findEntry, flattenTree, fitLabel, newNodeId,
-  polygonArea, polygonCentroid, radialLinkPath, radialTreeLayout, visibleItems,
-  viewportEdges, voronoiPathForSelection, voronoiPolygons,
+  polygonArea, polygonCentroid, radialLinkPath, radialTreeLayout, roundedPolygonPath, visibleItems,
+  viewportEdgeBand, viewportEdges, viewportEdgeSpan, voronoiPathForSelection, voronoiPolygons,
 } from "../../lib/organizer";
 import type { OrganizerView } from "./view-switcher";
 
@@ -56,21 +56,16 @@ export class OrganizerApp extends LitElement {
     .top-actions a { background: var(--ink); color: var(--background); }
     .switcher { position: absolute; z-index: 10; left: 50%; bottom: 1rem; transform: translateX(-50%); }
     .cell { cursor: default; }
-    .cell polygon { transition: filter .14s ease; }
-    .cell:hover polygon { filter: brightness(.97) saturate(1.05); }
+    .cell-shape { transition: filter .14s ease; }
+    .cell:hover .cell-shape { filter: brightness(.97) saturate(1.05); }
+    .cell-outline { fill: none; stroke: var(--cell-gap); stroke-width: 12; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
     .cell-label { fill: var(--ink); font-weight: 760; text-anchor: middle; cursor: text; user-select: none; paint-order: stroke; stroke: var(--cell-gap); stroke-width: 3px; stroke-linejoin: round; }
     .dot { fill: color-mix(in srgb, var(--ink) 48%, transparent); pointer-events: none; }
     .selection { fill: none; stroke: var(--ink); stroke-width: 4; vector-effect: non-scaling-stroke; pointer-events: none; }
     .edge-bands { cursor: cell; outline: none; }
-    .edge-strip { fill: var(--edge-overlay); transition: fill .14s ease; }
+    .edge-strip { fill: var(--edge-overlay); stroke: none; transition: fill .14s ease; }
     .edge-bands:hover .edge-strip, .edge-bands:focus-visible .edge-strip { fill: var(--edge-overlay-hover); }
-    .edge-strip.top { x: 0; y: 0; width: 100%; height: 5em; }
-    .edge-strip.right { x: calc(100% - 5em); y: 0; width: 5em; height: 100%; }
-    .edge-strip.bottom { x: 0; y: calc(100% - 5em); width: 100%; height: 5em; }
-    .edge-strip.left { x: 0; y: 0; width: 5em; height: 100%; }
-    .edge-strip:is(.left, .right).trim-top { y: 5em; height: calc(100% - 5em); }
-    .edge-strip:is(.left, .right).trim-bottom { height: calc(100% - 5em); }
-    .edge-strip:is(.left, .right).trim-top.trim-bottom { y: 5em; height: calc(100% - 10em); }
+    .add-child-sign { fill: var(--ink); font: 700 28px system-ui, sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; user-select: none; }
     .tree-link { stroke: color-mix(in srgb, var(--ink) 25%, transparent); stroke-width: 2; vector-effect: non-scaling-stroke; }
     .tree-node { cursor: pointer; outline: none; }
     .tree-node .core { stroke: var(--cell-gap); stroke-width: 4; vector-effect: non-scaling-stroke; }
@@ -372,20 +367,28 @@ export class OrganizerApp extends LitElement {
     const sites = points.map((point, index) => ({ ...point, x: point.x * this.width, y: point.y * this.height, id: items[index].id }));
     const polygons = voronoiPolygons(sites, this.width, this.height);
     return html`<svg viewBox="0 0 ${this.width} ${this.height}" role="img" aria-label="${this.current.name} level">
-      <defs>${polygons.map((polygon, index) => svg`<clipPath id=${`edge-cell-${index}`} clipPathUnits="userSpaceOnUse"><polygon points=${polygon.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")}></polygon></clipPath>`)}</defs>
+      <defs>${polygons.map((polygon, index) => svg`<clipPath id=${`edge-cell-${index}`} clipPathUnits="userSpaceOnUse"><path d=${roundedPolygonPath(polygon)}></path></clipPath>`)}</defs>
       ${polygons.map((polygon, index) => {
         const item = items[index], center = polygonCentroid(polygon), selected = item.id === this.selectedId;
         const label = fitLabel(item.name, Math.max(80, Math.sqrt(polygonArea(polygon)) * .7));
         const edges = viewportEdges(polygon, this.width, this.height);
+        const edgeSections = edges.map((edge) => ({
+          edge,
+          band: viewportEdgeBand(polygon, edge, this.width, this.height),
+          span: viewportEdgeSpan(polygon, edge, this.width, this.height),
+        })).filter(({ band }) => polygonArea(band) >= 1);
+        const markerEdge = edgeSections.reduce((longest, section) => section.span > longest.span ? section : longest, edgeSections[0])?.edge;
         const activateEdge = (event: Event) => { event.preventDefault(); event.stopPropagation(); this.openVoronoiNodeAndAddChild(item); };
         return svg`<g class="cell" role="option" aria-selected=${selected} @click=${() => this.select(item.id)} @dblclick=${() => this.openVoronoiNode(item)}>
-          <polygon points=${polygon.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")} fill=${palette[hashString(item.id) % palette.length]} stroke="var(--cell-gap)" stroke-width="4" vector-effect="non-scaling-stroke"></polygon>
-          ${selected ? svg`<polygon class="selection" points=${polygon.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")}></polygon>` : nothing}
+          <path class="cell-shape" d=${roundedPolygonPath(polygon)} fill=${palette[hashString(item.id) % palette.length]}></path>
           <circle class="dot" cx=${sites[index].x} cy=${sites[index].y} r="3"></circle>
-          ${edges.length ? svg`<g class="edge-bands" role="button" tabindex="0" aria-label=${`Open ${item.name} and add a child`} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}>${edges.map((edge) => {
-            const trims = edge === "left" || edge === "right" ? `${edges.includes("top") ? " trim-top" : ""}${edges.includes("bottom") ? " trim-bottom" : ""}` : "";
-            return svg`<rect class=${`edge-strip ${edge}${trims}`}></rect>`;
+          ${edgeSections.length ? svg`<g class="edge-bands" role="button" tabindex="0" aria-label=${`Open ${item.name} and add a child`} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}>${edgeSections.map(({ edge, band }) => {
+            const marker = polygonCentroid(band);
+            const points = band.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
+            return svg`<polygon class="edge-strip" points=${points}></polygon>${edge === markerEdge ? svg`<text class="add-child-sign" x=${marker.x} y=${marker.y} aria-hidden="true">+</text>` : nothing}`;
           })}</g>` : nothing}
+          <path class="cell-outline" d=${roundedPolygonPath(polygon)}></path>
+          ${selected ? svg`<path class="selection" d=${roundedPolygonPath(polygon)}></path>` : nothing}
           ${item.id !== this.draft?.id ? svg`<text class="cell-label" x=${center.x} y=${center.y} font-size=${label.size} dy=".35em" @dblclick=${(event: MouseEvent) => { event.stopPropagation(); this.beginEdit(item.id); }}>${label.text}</text>` : nothing}
         </g>`;
       })}

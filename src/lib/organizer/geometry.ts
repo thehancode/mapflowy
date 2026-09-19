@@ -2,6 +2,30 @@ import type { Point, Polygon } from './types';
 
 export type ViewportEdge = 'top' | 'right' | 'bottom' | 'left';
 
+export function roundedPolygonPath(points: Polygon, radius = 24): string {
+  if (points.length < 3) return '';
+  const toward = (from: Point, to: Point) => {
+    const length = Math.hypot(to.x - from.x, to.y - from.y);
+    const fraction = length ? Math.min(Math.max(0, radius), length / 2) / length : 0;
+    return `${from.x + (to.x - from.x) * fraction} ${from.y + (to.y - from.y) * fraction}`;
+  };
+  return points.map((point, index) => {
+    const previous = points[(index + points.length - 1) % points.length];
+    const next = points[(index + 1) % points.length];
+    return `${index ? 'L' : 'M'} ${toward(point, previous)} Q ${point.x} ${point.y} ${toward(point, next)}`;
+  }).join(' ') + ' Z';
+}
+
+export function viewportEdgeBand(polygon: Polygon, edge: ViewportEdge, width: number, height: number, thickness = 80): Polygon {
+  const edges = viewportEdges(polygon, width, height);
+  if (edge === 'top') return clipPolygon(polygon, 0, 1, thickness);
+  if (edge === 'bottom') return clipPolygon(polygon, 0, -1, thickness - height);
+  let band = edge === 'left' ? clipPolygon(polygon, 1, 0, thickness) : clipPolygon(polygon, -1, 0, thickness - width);
+  if (edges.includes('top')) band = clipPolygon(band, 0, -1, -thickness);
+  if (edges.includes('bottom')) band = clipPolygon(band, 0, 1, height - thickness);
+  return band;
+}
+
 export function circleLayout(count: number): Point[] {
   if (count <= 0) return [];
   if (count === 1) return [{ x: .5, y: .5 }];
@@ -30,6 +54,12 @@ export function viewportEdges(polygon: Polygon, width: number, height: number, e
   if (hasSpan(polygon.filter(({ y }) => y >= height - epsilon), 'x')) edges.push('bottom');
   if (hasSpan(polygon.filter(({ x }) => x <= epsilon), 'y')) edges.push('left');
   return edges;
+}
+export function viewportEdgeSpan(polygon: Polygon, edge: ViewportEdge, width: number, height: number, epsilon = 1): number {
+  const horizontal = edge === 'top' || edge === 'bottom';
+  const points = polygon.filter((point) => edge === 'top' ? point.y <= epsilon : edge === 'right' ? point.x >= width - epsilon : edge === 'bottom' ? point.y >= height - epsilon : point.x <= epsilon);
+  const values = points.map((point) => horizontal ? point.x : point.y);
+  return values.length < 2 ? 0 : Math.max(...values) - Math.min(...values);
 }
 export function polygonArea(points: Polygon): number { return Math.abs(points.reduce((sum, point, i) => { const next = points[(i + 1) % points.length]; return sum + point.x * next.y - next.x * point.y; }, 0) / 2); }
 export function polygonCentroid(points: Polygon): Point { if (points.length < 3) return points[0] ?? { x: 0, y: 0 }; let crossSum = 0, x = 0, y = 0; points.forEach((point, i) => { const next = points[(i + 1) % points.length], cross = point.x * next.y - next.x * point.y; crossSum += cross; x += (point.x + next.x) * cross; y += (point.y + next.y) * cross; }); return Math.abs(crossSum) < 1e-9 ? points[0] : { x: x / (3 * crossSum), y: y / (3 * crossSum) }; }
