@@ -10,7 +10,6 @@ import {
 import type { OrganizerView } from "./view-switcher";
 
 const palette = ["#f38b70", "#efc65d", "#71c1b2", "#88afe0", "#b99bdf", "#df9eb6", "#9fc477", "#e5a665"];
-const darkPalette = ["#824634", "#705b27", "#306258", "#3d5879", "#5e4778", "#75445a", "#476530", "#79522c"];
 const directions: Record<string, Point> = {
   ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 },
   ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 },
@@ -39,8 +38,8 @@ export class OrganizerApp extends LitElement {
   private treeCycles = new Map<string, number>();
 
   static styles = css`
-    :host { --ink: #171a17; --background: #e8e7de; --file-background: #f4f3ec; --panel: rgba(250,249,244,.88); --panel-border: rgba(23,26,23,.13); --shadow: rgba(23,26,23,.12); --muted: #686a63; --cell-gap: #faf9f4; --row-hover: rgba(255,255,255,.58); --row-selected: #fff; --editor: rgba(255,255,255,.96); --dialog: #faf9f4; --kbd: #fff; display: block; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; color: var(--ink); background: var(--background); color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-    :host([theme="dark"]) { --ink: #f2f0e8; --background: #151612; --file-background: #1b1c18; --panel: rgba(35,36,31,.9); --panel-border: rgba(242,240,232,.16); --shadow: rgba(0,0,0,.38); --muted: #aaa99f; --cell-gap: #151612; --row-hover: rgba(255,255,255,.06); --row-selected: #292a24; --editor: rgba(38,39,34,.98); --dialog: #23241f; --kbd: #30312b; color-scheme: dark; }
+    :host { --ink: #171a17; --background: #e8e7de; --file-background: #f4f3ec; --panel: rgba(250,249,244,.88); --panel-border: rgba(23,26,23,.13); --shadow: rgba(23,26,23,.12); --muted: #686a63; --cell-gap: #faf9f4; --edge-overlay: rgba(255,255,255,.24); --edge-overlay-hover: rgba(255,255,255,.5); --row-hover: rgba(255,255,255,.58); --row-selected: #fff; --editor: rgba(255,255,255,.96); --dialog: #faf9f4; --kbd: #fff; display: block; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; color: var(--ink); background: var(--background); color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    :host([theme="dark"]) { --ink: #f2f0e8; --background: #151612; --file-background: #1b1c18; --panel: rgba(35,36,31,.9); --panel-border: rgba(242,240,232,.16); --shadow: rgba(0,0,0,.38); --muted: #aaa99f; --cell-gap: #151612; --edge-overlay: color-mix(in srgb, var(--ink) 10%, transparent); --edge-overlay-hover: color-mix(in srgb, var(--ink) 22%, transparent); --row-hover: rgba(255,255,255,.06); --row-selected: #292a24; --editor: rgba(38,39,34,.98); --dialog: #23241f; --kbd: #30312b; color-scheme: dark; }
     * { box-sizing: border-box; }
     button, input { font: inherit; }
     .workspace { position: relative; width: 100%; height: 100%; overflow: hidden; outline: none; background: var(--background); }
@@ -63,8 +62,8 @@ export class OrganizerApp extends LitElement {
     .dot { fill: color-mix(in srgb, var(--ink) 48%, transparent); pointer-events: none; }
     .selection { fill: none; stroke: var(--ink); stroke-width: 4; vector-effect: non-scaling-stroke; pointer-events: none; }
     .edge-bands { cursor: cell; outline: none; }
-    .edge-strip { fill: color-mix(in srgb, var(--ink) 10%, transparent); transition: fill .14s ease; }
-    .edge-bands:hover .edge-strip, .edge-bands:focus-visible .edge-strip { fill: color-mix(in srgb, var(--ink) 22%, transparent); }
+    .edge-strip { fill: var(--edge-overlay); transition: fill .14s ease; }
+    .edge-bands:hover .edge-strip, .edge-bands:focus-visible .edge-strip { fill: var(--edge-overlay-hover); }
     .edge-strip.top { x: 0; y: 0; width: 100%; height: 5em; }
     .edge-strip.right { x: calc(100% - 5em); y: 0; width: 5em; height: 100%; }
     .edge-strip.bottom { x: 0; y: calc(100% - 5em); width: 100%; height: 5em; }
@@ -380,7 +379,7 @@ export class OrganizerApp extends LitElement {
         const edges = viewportEdges(polygon, this.width, this.height);
         const activateEdge = (event: Event) => { event.preventDefault(); event.stopPropagation(); this.openVoronoiNodeAndAddChild(item); };
         return svg`<g class="cell" role="option" aria-selected=${selected} @click=${() => this.select(item.id)} @dblclick=${() => this.openVoronoiNode(item)}>
-          <polygon points=${polygon.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")} fill=${(this.theme === "dark" ? darkPalette : palette)[hashString(item.id) % palette.length]} stroke="var(--cell-gap)" stroke-width="4" vector-effect="non-scaling-stroke"></polygon>
+          <polygon points=${polygon.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")} fill=${palette[hashString(item.id) % palette.length]} stroke="var(--cell-gap)" stroke-width="4" vector-effect="non-scaling-stroke"></polygon>
           ${selected ? svg`<polygon class="selection" points=${polygon.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")}></polygon>` : nothing}
           <circle class="dot" cx=${sites[index].x} cy=${sites[index].y} r="3"></circle>
           ${edges.length ? svg`<g class="edge-bands" role="button" tabindex="0" aria-label=${`Open ${item.name} and add a child`} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}>${edges.map((edge) => {
@@ -412,7 +411,7 @@ export class OrganizerApp extends LitElement {
       ${layout.nodes.map((entry) => {
         const current = entry.node.id === this.current.id, selected = entry.node.id === this.selectedId, radius = entry.depth === 0 ? 24 : 19;
         return svg`<g class="tree-node ${current ? "current" : ""}" tabindex="0" role="button" aria-label="${entry.node.name}, level ${entry.depth + 1}" transform="translate(${entry.x} ${entry.y})" @click=${() => this.chooseTreeNode(entry)} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") this.chooseTreeNode(entry); }}>
-          <circle class="core" r=${radius} fill=${(this.theme === "dark" ? darkPalette : palette)[hashString(entry.node.id) % palette.length]}></circle>
+          <circle class="core" r=${radius} fill=${palette[hashString(entry.node.id) % palette.length]}></circle>
           ${selected ? svg`<circle r=${radius + 4} fill="none" stroke="var(--ink)" stroke-width="2"></circle>` : nothing}
           <circle class="add-ring" r=${radius + 8} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}></circle>
           <text y=${entry.depth === 0 ? 39 : 34}>${entry.node.name.length > 22 ? `${entry.node.name.slice(0, 20)}…` : entry.node.name}</text>
