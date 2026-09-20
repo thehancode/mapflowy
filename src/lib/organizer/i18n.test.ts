@@ -20,6 +20,8 @@ describe("organizer translations", () => {
     expect(translate("es", "addChildNode")).toBe("Añadir nodo-hijo");
     expect(translate("en", "addChild")).toBe("Add a child-node");
     expect(translate("es", "addChild")).toBe("Añadir un nodo-hijo");
+    expect(translate("en", "addNode")).toBe("Add node");
+    expect(translate("es", "addNode")).toBe("Añadir nodo");
   });
 
   it("uses natural child counters and localized depth-limit messages", () => {
@@ -29,11 +31,19 @@ describe("organizer translations", () => {
     expect(translate("es", "depthLimitMessage", { count: 12 })).toContain("profundidad máxima de 12 niveles");
   });
 
+  it("localizes map deletion", () => {
+    expect(translate("en", "deleteMap")).toBe("Delete map");
+    expect(translate("es", "deleteMap")).toBe("Eliminar mapa");
+    expect(translate("es", "deletedMap", { name: "Ideas" })).toBe("Se eliminó Ideas.");
+  });
+
   it("uses the requested localized keyboard shortcut descriptions", () => {
     expect([translate("en", "openNode"), translate("en", "goBack")]).toEqual(["Open node", "Go up one level"]);
     expect([translate("es", "openNode"), translate("es", "goBack")]).toEqual(["Abrir nodo", "Subir un nivel"]);
-    expect([translate("en", "shortcutAddSibling"), translate("en", "shortcutIndent"), translate("en", "shortcutOutdent")]).toEqual(["Add a sibling-node", "Indent node", "Move node up one level"]);
-    expect([translate("es", "shortcutAddSibling"), translate("es", "shortcutIndent"), translate("es", "shortcutOutdent")]).toEqual(["Añadir un nodo-hermano", "Anidar nodo", "Subir nodo un nivel"]);
+    expect([translate("en", "viewNode"), translate("es", "viewNode")]).toEqual(["View node", "Ver nodo"]);
+    expect([translate("en", "shortcutAddSibling"), translate("en", "shortcutIndent"), translate("en", "shortcutOutdent")]).toEqual(["Add a sibling-node", "Indent node", "Move node up"]);
+    expect([translate("es", "shortcutAddSibling"), translate("es", "shortcutIndent"), translate("es", "shortcutOutdent")]).toEqual(["Añadir hermano", "Anidar nodo", "Subir nodo"]);
+    expect(translate("es", "editElement")).toBe("Editar nodo");
   });
 
   it("interpolates dynamic values", () => {

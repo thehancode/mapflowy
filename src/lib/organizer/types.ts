@@ -11,7 +11,7 @@ export interface OrganizerMapDocument {
 
 export interface OrganizerWorkspaceDocument {
   version: 3;
-  activeMapId: string;
+  activeMapId: string | null;
   maps: OrganizerNode[];
 }
 

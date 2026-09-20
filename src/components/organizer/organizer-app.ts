@@ -3,8 +3,8 @@ import { customElement, property, state } from "lit/decorators.js";
 import "./view-switcher";
 import type { OrganizerLanguage, OrganizerNode, OrganizerWorkspaceDocument, Point, LayoutEntry, OrganizerTheme, TranslationKey, TutorialDocument } from "../../lib/organizer";
 import {
-  canPlaceSubtreeAtDepth, circleLayout, collectNodeIds, createRepository, createTutorialDocument, createTutorialRepository, createUserConfigRepository, duplicateMap, ELEMENT_TEXT_LIMIT, findEntry, flattenTree, fitLabel, GRAPH_ROOT_RADIUS, localizeTutorialDocument, MAX_TREE_LEVELS, newNodeId, normalizeElementText,
-  polygonArea, polygonBottomBand, polygonCentroid, radialArcPath, radialLinkPath, radialTreeLayout, roundedPolygonPath, visibleItems,
+  canPlaceSubtreeAtDepth, circleLayout, collectNodeIds, createOnboardingRepository, createRepository, createTutorialDocument, createTutorialRepository, createUserConfigRepository, duplicateMap, ELEMENT_TEXT_LIMIT, emptyWorkspace, findEntry, flattenTree, fitLabel, GRAPH_ROOT_RADIUS, localizeTutorialDocument, MAX_TREE_LEVELS, newNodeId, normalizeElementText,
+  polygonArea, polygonBottomBand, polygonCentroid, radialArcPath, radialLinkPath, radialTreeLayout, removeWorkspaceMap, roundedPolygonPath, visibleItems,
   translate, viewportEdgeBand, viewportEdgeOverlayPath, viewportEdges, viewportEdgeSpan, voronoiPathForSelection, voronoiPolygons,
 } from "../../lib/organizer";
 import type { OrganizerView } from "./view-switcher";
@@ -12,7 +12,6 @@ import type { OrganizerView } from "./view-switcher";
 const palette = ["#f38b70", "#efc65d", "#71c1b2", "#88afe0", "#b99bdf", "#df9eb6", "#9fc477", "#e5a665"];
 const treeLevelSymbols = ["●", "◆", "■", "▲"] as const;
 const treeLevelColors = ["#e45745", "#db8437", "#c2a12f", "#79a944", "#3e9f70", "#329a98", "#4089c7", "#5d70c5", "#8860bd", "#ad5da5", "#c65e7b", "#a46d52"] as const;
-const initialRoot: OrganizerNode = { id: "node-1", name: "Projects", children: [] };
 type ContextMenuState = { kind: "element" | "map"; id: string; x: number; y: number };
 const directions: Record<string, Point> = {
   ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 },
@@ -31,10 +30,11 @@ export class OrganizerApp extends LitElement {
   private readonly configRepository = createUserConfigRepository();
   private readonly initialConfig = this.configRepository.load();
   private readonly tutorialRepository = createTutorialRepository();
+  private readonly onboardingRepository = createOnboardingRepository();
   @property({ reflect: true }) theme: OrganizerTheme = this.initialConfig.theme;
   @property({ reflect: true }) language: OrganizerLanguage = this.initialConfig.language;
-  @state() private workspace: OrganizerWorkspaceDocument = { version: 3, activeMapId: initialRoot.id, maps: [initialRoot] };
-  @state() private tutorialOpen = false;
+  @state() private workspace: OrganizerWorkspaceDocument = emptyWorkspace();
+  @state() private tutorialOpen = true;
   @state() private tutorialDocument: TutorialDocument = createTutorialDocument(this.language);
   @state() private path: OrganizerNode[] = [this.root];
   @state() private selectedId = this.root.id;
@@ -44,7 +44,6 @@ export class OrganizerApp extends LitElement {
   @state() private height = 720;
   @state() private draft: { id: string; parentId: string; restoreId: string; mode: "create" | "edit" } | null = null;
   @state() private sidebarOpen = false;
-  @state() private helpOpen = false;
   @state() private depthLimitOpen = false;
   @state() private editingMapId: string | null = null;
   @state() private contextMenu: ContextMenuState | null = null;
@@ -56,8 +55,8 @@ export class OrganizerApp extends LitElement {
   private toastTimer?: number;
 
   static styles = css`
-    :host { --ink: #171a17; --background: #e8e7de; --file-background: #f4f3ec; --panel: rgba(250,249,244,.88); --panel-border: rgba(23,26,23,.13); --shadow: rgba(23,26,23,.12); --muted: #686a63; --cell-gap: #faf9f4; --edge-overlay: rgba(255,255,255,.24); --edge-overlay-hover: rgba(255,255,255,.5); --row-hover: rgba(255,255,255,.58); --row-selected: #fff; --editor: rgba(255,255,255,.96); --dialog: #faf9f4; --kbd: #fff; display: block; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; color: var(--ink); background: var(--background); color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-    :host([theme="dark"]) { --ink: #f2f0e8; --background: #151612; --file-background: #1b1c18; --panel: rgba(35,36,31,.9); --panel-border: rgba(242,240,232,.16); --shadow: rgba(0,0,0,.38); --muted: #aaa99f; --cell-gap: #151612; --edge-overlay: color-mix(in srgb, var(--ink) 10%, transparent); --edge-overlay-hover: color-mix(in srgb, var(--ink) 22%, transparent); --row-hover: rgba(255,255,255,.06); --row-selected: #292a24; --editor: rgba(38,39,34,.98); --dialog: #23241f; --kbd: #30312b; color-scheme: dark; }
+    :host { --ink: #171a17; --background: #e8e7de; --file-background: #f4f3ec; --panel: rgba(250,249,244,.88); --panel-border: rgba(23,26,23,.13); --shadow: rgba(23,26,23,.12); --muted: #686a63; --cell-gap: #faf9f4; --edge-overlay-hover: rgba(255,255,255,.18); --row-hover: rgba(255,255,255,.58); --row-selected: #fff; --editor: rgba(255,255,255,.96); --dialog: #faf9f4; --kbd: #fff; display: block; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; color: var(--ink); background: var(--background); color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    :host([theme="dark"]) { --ink: #f2f0e8; --background: #151612; --file-background: #1b1c18; --panel: rgba(35,36,31,.9); --panel-border: rgba(242,240,232,.16); --shadow: rgba(0,0,0,.38); --muted: #aaa99f; --cell-gap: #151612; --edge-overlay-hover: color-mix(in srgb, var(--ink) 14%, transparent); --row-hover: rgba(255,255,255,.06); --row-selected: #292a24; --editor: rgba(38,39,34,.98); --dialog: #23241f; --kbd: #30312b; color-scheme: dark; }
     * { box-sizing: border-box; }
     button, input { font: inherit; }
     .workspace { position: relative; width: 100%; height: 100%; overflow: hidden; outline: none; background: var(--background); }
@@ -77,13 +76,16 @@ export class OrganizerApp extends LitElement {
     .top-actions a { background: var(--ink); color: var(--background); }
     .icon-button { width: 2.25rem; justify-content: center; padding: 0 !important; }
     .language-toggle { min-width: 2.5rem; justify-content: center; padding: 0 .55rem !important; }
-    .icon-button svg, .context-toolbar svg, .sidebar-toggle svg, .quick-add-button svg, .back-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    .icon-button svg, .context-toolbar svg, .sidebar-toggle svg, .back-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
     .switcher { position: absolute; z-index: 10; top: 1rem; left: 50%; transform: translateX(-50%); }
-    .sidebar-toggle, .quick-add-button { position: absolute; z-index: 12; bottom: 1rem; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); cursor: pointer; }
-    .sidebar-toggle { left: 1rem; }
-    .quick-add-button { left: 4.25rem; }
+    .left-actions { position: absolute; z-index: 12; left: 1rem; bottom: 1rem; display: flex; flex-direction: column; align-items: flex-start; gap: .45rem; }
+    .sidebar-toggle { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); cursor: pointer; }
+    .quick-actions { display: flex; flex-direction: column; align-items: flex-start; gap: .45rem; }
+    .quick-action-button { display: inline-flex; align-items: center; gap: .55rem; min-height: 2rem; padding: .42rem .7rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .72rem; font-weight: 700; cursor: pointer; }
+    .quick-action-button kbd { color: var(--ink); }
+    .quick-action-button:hover { background: var(--row-hover); }
     .back-button { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); pointer-events: auto; cursor: pointer; }
-    .map-sidebar { position: absolute; z-index: 11; left: 1rem; bottom: 4.5rem; display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
+    .map-sidebar { position: absolute; z-index: 11; left: 1rem; bottom: 8.75rem; display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
     .map-sidebar h2 { margin: 0; padding: 1rem 1rem .55rem; font-size: .82rem; }
     .map-list { min-height: 0; overflow-y: auto; padding: .2rem .55rem .65rem; }
     .map-row { display: flex; align-items: center; width: 100%; min-height: 42px; padding: .35rem .55rem; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; }
@@ -91,9 +93,6 @@ export class OrganizerApp extends LitElement {
     .map-row.active { border-color: var(--panel-border); background: var(--row-selected); }
     .map-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; font-weight: 720; }
     .map-name-input { width: 100%; min-height: 32px; padding: 0 .5rem; border: 1px solid var(--panel-border); border-radius: 7px; background: var(--editor); color: var(--ink); outline: 0; font-weight: 700; }
-    .map-sidebar-footer { display: grid; gap: .45rem; padding: .65rem; border-top: 1px solid var(--panel-border); }
-    .add-map, .tutorial-map { display: grid; place-items: center; width: 100%; min-height: 40px; border: 1px solid var(--panel-border); border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; }
-    .tutorial-map.active, .tutorial-map:hover, .add-map:hover { background: var(--row-hover); }
     .context-toolbar { position: fixed; z-index: 40; display: flex; gap: .2rem; padding: .3rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--ink); box-shadow: 0 14px 40px var(--shadow); backdrop-filter: blur(18px); }
     .context-toolbar button { display: grid; place-items: center; width: 2.35rem; height: 2.35rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
     .context-toolbar button:hover { background: var(--row-hover); }
@@ -104,7 +103,7 @@ export class OrganizerApp extends LitElement {
     .cell-label { fill: var(--ink); font-weight: 760; text-anchor: middle; cursor: text; user-select: none; paint-order: stroke; stroke: var(--cell-gap); stroke-width: 3px; stroke-linejoin: round; }
     .selection { fill: none; stroke: var(--ink); stroke-width: 20; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
     .edge-bands { cursor: cell; outline: none; }
-    .edge-strip { fill: var(--edge-overlay); stroke: none; transition: fill .14s ease; }
+    .edge-strip { fill: transparent; stroke: none; transition: fill .14s ease; }
     .edge-bands:hover .edge-strip, .edge-bands:focus-visible .edge-strip { fill: var(--edge-overlay-hover); }
     .add-child-sign { fill: #fff; font: 700 28px system-ui, sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; user-select: none; }
     :host([theme="dark"]) .add-child-sign { fill: var(--ink); }
@@ -127,15 +126,9 @@ export class OrganizerApp extends LitElement {
     .file-editor { width: min(360px, calc(100% - 30px)); height: 32px; padding: 0 .55rem; border: 2px solid var(--ink); border-radius: 6px; outline: 0; background: var(--editor); color: var(--ink); font-weight: 700; }
     .toast { position: fixed; z-index: 60; left: 50%; bottom: 1.25rem; max-width: calc(100vw - 2rem); padding: .7rem 1rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--ink); color: var(--background); box-shadow: 0 12px 36px var(--shadow); font-size: .82rem; font-weight: 750; transform: translateX(-50%); }
     .toast.raised { bottom: 6rem; }
-    .storage-note { position: absolute; z-index: 9; right: 1rem; bottom: 1rem; padding: .55rem .75rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .7rem; font-weight: 700; }
-    .help-toggle { position: absolute; z-index: 12; right: 1rem; bottom: 4rem; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); font-weight: 850; cursor: pointer; }
-    .help-popover { position: absolute; z-index: 30; right: 1rem; bottom: 7.25rem; width: min(390px, calc(100vw - 2rem)); max-height: min(62dvh, 520px); overflow-y: auto; padding: 1rem 1.15rem; border: 1px solid var(--panel-border); border-radius: 18px; outline: 0; background: var(--dialog); color: var(--ink); box-shadow: 0 22px 64px var(--shadow); }
-    .help-popover h2 { margin: 0 0 .5rem; font-size: 1rem; }
-    .help-popover ul { margin: 0; padding: 0; color: var(--muted); list-style: none; }
-    .help-popover li:not(.shortcut-section) { display: grid; grid-template-columns: minmax(8.5rem, auto) 1fr; align-items: center; gap: 1rem; min-height: 1.8rem; }
-    .help-popover .shortcut-keys { justify-self: start; white-space: nowrap; }
-    .help-popover .shortcut-description { justify-self: end; text-align: right; }
-    .help-popover .shortcut-section { margin-top: .65rem; color: var(--ink); font-weight: 800; text-align: right; }
+    .shortcut-hints { position: absolute; z-index: 9; right: 1rem; bottom: 1rem; display: flex; flex-direction: column; align-items: flex-end; gap: .45rem; pointer-events: none; }
+    .shortcut-hint { display: flex; align-items: center; gap: .55rem; min-height: 2rem; padding: .42rem .7rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .72rem; font-weight: 700; }
+    .shortcut-key-group { display: inline-flex; align-items: center; gap: .25rem; color: var(--ink); white-space: nowrap; }
     .modal-backdrop { position: fixed; z-index: 70; inset: 0; display: grid; place-items: center; padding: 1rem; background: rgba(23,26,23,.38); backdrop-filter: blur(4px); }
     .depth-limit-modal { width: min(430px, 100%); padding: 1.25rem; border: 1px solid var(--panel-border); border-radius: 18px; outline: 0; background: var(--dialog); color: var(--ink); box-shadow: 0 30px 90px var(--shadow); }
     .depth-limit-modal h2 { margin: 0 0 .65rem; font-size: 1.05rem; }
@@ -150,12 +143,10 @@ export class OrganizerApp extends LitElement {
       .topbar { top: .65rem; left: .65rem; right: .65rem; }
       .switcher { top: 4.15rem; }
       .crumbs { max-width: calc(100vw - 11.5rem); }
-      .sidebar-toggle { left: .65rem; bottom: .65rem; }
-      .quick-add-button { left: 3.9rem; bottom: .65rem; }
-      .storage-note { right: .65rem; bottom: .65rem; }
-      .help-toggle { right: .65rem; bottom: 3.65rem; }
-      .help-popover { right: .65rem; bottom: 6.9rem; width: calc(100vw - 1.3rem); }
-      .map-sidebar { left: .65rem; bottom: 4rem; width: min(310px, calc(100vw - 1.3rem)); }
+      .left-actions { left: .65rem; bottom: .65rem; }
+      .shortcut-hints { right: .65rem; bottom: .65rem; }
+      .shortcut-hint { max-width: calc(100vw - 1.3rem); }
+      .map-sidebar { left: .65rem; bottom: 8.4rem; width: min(310px, calc(100vw - 1.3rem)); }
       .file-tree { padding-top: 8.2rem; }
       .file-row { margin-left: calc(var(--depth) * 18px); }
       .tree-node text { font-size: 10px; }
@@ -198,22 +189,18 @@ export class OrganizerApp extends LitElement {
     if (changed.has("contextMenu") && this.contextMenu) requestAnimationFrame(() => {
       this.renderRoot.querySelector<HTMLButtonElement>(".context-toolbar button")?.focus();
     });
-    if (changed.has("helpOpen") && this.helpOpen) requestAnimationFrame(() => {
-      this.renderRoot.querySelector<HTMLElement>(".help-popover")?.focus();
-    });
     if (changed.has("depthLimitOpen") && this.depthLimitOpen) requestAnimationFrame(() => {
       this.renderRoot.querySelector<HTMLButtonElement>(".depth-limit-modal button")?.focus();
     });
   }
 
-  private get root(): OrganizerNode { return this.tutorialOpen ? this.tutorialDocument.root : this.workspace.maps.find(({ id }) => id === this.workspace.activeMapId) ?? this.workspace.maps[0]; }
+  private get root(): OrganizerNode { return this.tutorialOpen ? this.tutorialDocument.root : this.workspace.maps.find(({ id }) => id === this.workspace.activeMapId) ?? this.workspace.maps[0] ?? this.tutorialDocument.root; }
   private get current(): OrganizerNode { return this.path[this.path.length - 1]; }
   private t(key: TranslationKey, values: Record<string, string | number> = {}): string { return translate(this.language, key, values); }
   private setStatus(message: string): void { this.status = message; }
 
   private showDepthLimit(): void {
     this.contextMenu = null;
-    this.helpOpen = false;
     this.depthLimitOpen = true;
   }
 
@@ -243,9 +230,12 @@ export class OrganizerApp extends LitElement {
   }
 
   private async load(): Promise<void> {
+    const firstVisit = this.onboardingRepository.isFirstVisit();
     this.workspace = await this.repository.load();
     this.tutorialDocument = this.tutorialRepository.load(this.language);
-    this.tutorialOpen = false;
+    this.tutorialOpen = firstVisit || this.workspace.maps.length === 0;
+    this.sidebarOpen = firstVisit;
+    if (firstVisit) this.onboardingRepository.markSeen();
     this.path = [this.root]; this.selectedId = this.root.id; this.treeCycles.clear();
     this.setStatus(this.t("loaded", { name: this.root.name }));
   }
@@ -325,6 +315,22 @@ export class OrganizerApp extends LitElement {
     this.editingMapId = null; this.resetToRoot(this.t("created", { name: duplicate.name })); this.persist();
   }
 
+  private deleteWorkspaceMap(id: string): void {
+    const map = this.workspace.maps.find((candidate) => candidate.id === id);
+    if (!map) return;
+    const wasVisible = !this.tutorialOpen && this.workspace.activeMapId === id;
+    this.workspace = removeWorkspaceMap(this.workspace, id);
+    this.contextMenu = null;
+    if (this.editingMapId === id) this.editingMapId = null;
+    if (wasVisible) {
+      this.tutorialOpen = this.workspace.maps.length === 0;
+      this.resetToRoot(this.t("deletedMap", { name: map.name }));
+    } else {
+      this.setStatus(this.t("deletedMap", { name: map.name }));
+    }
+    this.persistMaps();
+  }
+
   private downloadMap(root: OrganizerNode): void {
     const blob = new Blob([this.repository.exportMapJson(root)], { type: "application/json" });
     const url = URL.createObjectURL(blob), link = document.createElement("a");
@@ -360,7 +366,7 @@ export class OrganizerApp extends LitElement {
   }
 
   private contextPosition(x: number, y: number): Pick<ContextMenuState, "x" | "y"> {
-    const menuWidth = 150, menuHeight = 48, margin = 8;
+    const menuWidth = 190, menuHeight = 48, margin = 8;
     return { x: Math.max(margin, Math.min(x, window.innerWidth - menuWidth - margin)), y: Math.max(margin, Math.min(y, window.innerHeight - menuHeight - margin)) };
   }
 
@@ -392,7 +398,6 @@ export class OrganizerApp extends LitElement {
     const includesClass = (...classNames: string[]) => path.some((target) => target instanceof Element && classNames.some((className) => target.classList.contains(className)));
     if (this.contextMenu && !includesClass("context-toolbar")) this.contextMenu = null;
     if (this.sidebarOpen && !includesClass("map-sidebar", "sidebar-toggle")) this.sidebarOpen = false;
-    if (this.helpOpen && !includesClass("help-popover", "help-toggle")) this.helpOpen = false;
   }
 
   private select(id: string): void { const name = findEntry(this.root, id)?.node.name ?? this.t("element"); this.selectedId = id; this.setStatus(this.t("elementSelected", { name })); }
@@ -556,12 +561,11 @@ export class OrganizerApp extends LitElement {
     }
     if (event.key === "Escape" && this.contextMenu) { event.preventDefault(); this.contextMenu = null; return; }
     if (event.key === "Escape" && this.sidebarOpen) { event.preventDefault(); this.sidebarOpen = false; return; }
-    if (event.key === "Escape" && this.helpOpen) { event.preventDefault(); this.helpOpen = false; return; }
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); this.openKeyboardElementMenu(); return; }
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     const shortcutView = viewShortcuts[event.key];
     if (shortcutView) { event.preventDefault(); this.chooseView(shortcutView); return; }
-    if (event.key === "?") { event.preventDefault(); this.helpOpen = !this.helpOpen; return; }
+    if (event.key.toLowerCase() === "n") { event.preventDefault(); this.createMap(); return; }
     if (event.key.toLowerCase() === "e") { event.preventDefault(); this.beginEdit(); return; }
     if (this.view === "file") {
       if (event.key === "Tab") { event.preventDefault(); event.shiftKey ? this.outdentFile() : this.indentFile(); }
@@ -646,7 +650,7 @@ export class OrganizerApp extends LitElement {
         const addSectionPath = isParent ? roundedPolygonPath(parentBand, 0) : viewportEdgeOverlayPath(polygon, edges, this.width, this.height);
         const markerBand = isParent ? parentBand : markerSection?.band;
         const activateEdge = (event: Event) => { event.preventDefault(); event.stopPropagation(); this.openVoronoiNodeAndAddChild(item); };
-        return svg`<g class="cell" data-node-id=${item.id} role="option" aria-selected=${selected} @click=${() => this.select(item.id)} @dblclick=${() => this.openVoronoiNode(item)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", item.id)}>
+        return svg`<g class="cell" data-node-id=${item.id} role="option" aria-selected=${selected} @click=${() => this.select(item.id)} @dblclick=${() => { if (isParent) this.goBack(); else this.openVoronoiNode(item); }} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", item.id)}>
           <path class="cell-shape" d=${roundedPolygonPath(polygon)} fill=${palette[hashString(item.id) % palette.length]}></path>
           ${markerBand && polygonArea(markerBand) >= 1 ? svg`<g class="edge-bands" role="button" tabindex="0" aria-label=${this.t("openAndAddChild", { name: item.name })} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}><path class="edge-strip" fill-rule="evenodd" d=${addSectionPath}></path>${(() => {
             const marker = polygonCentroid(markerBand);
@@ -718,8 +722,21 @@ export class OrganizerApp extends LitElement {
         <div class="map-row ${!this.tutorialOpen && map.id === this.workspace.activeMapId ? "active" : ""}" role="button" tabindex="0" aria-current=${!this.tutorialOpen && map.id === this.workspace.activeMapId ? "true" : nothing} @click=${() => this.switchMap(map.id)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "map", map.id)} @keydown=${(event: KeyboardEvent) => this.mapRowKey(event, map.id)}>
           ${this.editingMapId === map.id ? html`<input data-map-edit class="map-name-input" maxlength=${ELEMENT_TEXT_LIMIT} .value=${map.name} aria-label=${this.t("mapText")} @click=${(event: Event) => event.stopPropagation()} @contextmenu=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => this.mapRenameKey(event, map.id)} @blur=${(event: FocusEvent) => this.commitMapRename(event.currentTarget as HTMLInputElement, map.id)} />` : html`<span class="map-row-label" title=${map.name}>${map.name}</span>`}
         </div>`)}
+        <div class="map-row ${this.tutorialOpen ? "active" : ""}" role="button" tabindex="0" aria-current=${this.tutorialOpen ? "true" : nothing} @click=${this.openTutorial} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.openTutorial(); } }}>
+          <span class="map-row-label">Tutorial</span>
+        </div>
       </div>
-      <div class="map-sidebar-footer"><button class="tutorial-map ${this.tutorialOpen ? "active" : ""}" aria-pressed=${this.tutorialOpen} @click=${this.openTutorial}>Tutorial</button><button class="add-map" aria-label=${this.t("createMap")} title=${this.t("createMap")} @click=${this.createMap}>+ ${this.t("newMap")}</button></div>
+    </aside>`;
+  }
+
+  private renderShortcutHints() {
+    const hint = (keys: string[], description: TranslationKey) => html`<div class="shortcut-hint"><span class="shortcut-key-group">${keys.map((key, index) => html`${index ? html`<span aria-hidden="true">+</span>` : nothing}<kbd>${key}</kbd>`)}</span><span>${this.t(description)}</span></div>`;
+    const selected = findEntry(this.root, this.selectedId);
+    const canMoveUp = Boolean(selected?.parent && findEntry(this.root, selected.parent.id)?.parent);
+    return html`<aside class="shortcut-hints" aria-label=${this.t("contextualShortcuts")}>
+      ${this.view === "voronoi" ? this.path.length === 1 ? hint(["Enter"], "viewNode") : hint(["Shift", "Enter"], "goBack") : nothing}
+      ${this.view === "file" ? html`${hint(["Enter"], "shortcutAddSibling")}${canMoveUp ? hint(["Shift", "Tab"], "shortcutOutdent") : hint(["Tab"], "shortcutIndent")}` : nothing}
+      ${hint(["E"], "editElement")}
     </aside>`;
   }
 
@@ -741,6 +758,7 @@ export class OrganizerApp extends LitElement {
       <button aria-label=${this.t("editMapName")} title=${this.t("editName")} @click=${() => this.beginMapRename(map.id)}>${this.renderIcon("edit")}</button>
       <button aria-label=${this.t("duplicateMap")} title=${this.t("duplicate")} @click=${() => this.duplicateWorkspaceMap(map.id)}>${this.renderIcon("duplicate")}</button>
       <button aria-label=${this.t("exportMap")} title=${this.t("export")} @click=${() => this.downloadMap(map)}>${this.renderIcon("download")}</button>
+      <button aria-label=${this.t("deleteMap")} title=${this.t("delete")} @click=${() => this.deleteWorkspaceMap(map.id)}>${this.renderIcon("trash")}</button>
     </div>`;
   }
 
@@ -755,30 +773,16 @@ export class OrganizerApp extends LitElement {
         <div class="top-actions"><button class="icon-button theme-toggle" aria-pressed=${this.theme === "dark"} aria-label=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} title=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} @click=${this.toggleTheme}>${this.renderIcon(this.theme === "dark" ? "sun" : "moon")}</button><button class="language-toggle" aria-label=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} title=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} @click=${() => this.setLanguage(this.language === "en" ? "es" : "en")}>${this.language === "en" ? "ES" : "EN"}</button></div>
       </div>
       <div class="switcher"><view-switcher .view=${this.view} .language=${this.language} @view-change=${(event: CustomEvent<OrganizerView>) => this.chooseView(event.detail)}></view-switcher></div>
-      <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
-      <button class="quick-add-button" aria-label=${this.t("addChildNode")} title=${this.t("addChildNode")} @click=${this.addChildToSelected}>${this.renderIcon("plus")}</button>
+      <div class="left-actions">
+        <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
+        <div class="quick-actions">
+          <button class="quick-action-button new-map-button" aria-label=${this.t("createMap")} title=${this.t("createMap")} @click=${this.createMap}><kbd>N</kbd><span>${this.t("newMap")}</span></button>
+          <button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}><kbd>A</kbd><span>${this.t("addNode")}</span></button>
+        </div>
+      </div>
       ${this.renderSidebar()}
       ${this.renderContextToolbar()}
-      <button class="help-toggle" aria-expanded=${this.helpOpen} aria-controls="keyboard-help" aria-label=${this.t("openHelp")} title=${this.t("help")} @click=${() => { this.helpOpen = !this.helpOpen; this.contextMenu = null; }}>?</button>
-      ${this.helpOpen ? html`<section id="keyboard-help" class="help-popover" role="dialog" aria-modal="false" aria-labelledby="keyboard-help-title" tabindex="-1">
-        <h2 id="keyboard-help-title">${this.t("keyboardHelp")}</h2>
-        <ul>
-          <li class="shortcut-section">${this.t("generalShortcuts")}</li>
-          <li><span class="shortcut-keys"><kbd>A</kbd></span><span class="shortcut-description">${this.t("addChild")}</span></li>
-          <li><span class="shortcut-keys"><kbd>E</kbd></span><span class="shortcut-description">${this.t("editElement")}</span></li>
-          <li><span class="shortcut-keys"><kbd>↑ ↓ ← →</kbd></span><span class="shortcut-description">${this.t("move")}</span></li>
-          <li><span class="shortcut-keys"><kbd>1</kbd></span><span class="shortcut-description">${this.t("voronoiView")}</span></li>
-          <li><span class="shortcut-keys"><kbd>2</kbd></span><span class="shortcut-description">${this.t("graphView")}</span></li>
-          <li><span class="shortcut-keys"><kbd>3</kbd></span><span class="shortcut-description">${this.t("treeView")}</span></li>
-          <li class="shortcut-section">${this.t("shortcutVoronoi")}</li>
-          <li><span class="shortcut-keys"><kbd>Enter</kbd></span><span class="shortcut-description">${this.t("openNode")}</span></li>
-          <li><span class="shortcut-keys"><kbd>Shift</kbd> + <kbd>Enter</kbd></span><span class="shortcut-description">${this.t("goBack")}</span></li>
-          <li class="shortcut-section">${this.t("treeView")}</li>
-          <li><span class="shortcut-keys"><kbd>Enter</kbd></span><span class="shortcut-description">${this.t("shortcutAddSibling")}</span></li>
-          <li><span class="shortcut-keys"><kbd>Tab</kbd></span><span class="shortcut-description">${this.t("shortcutIndent")}</span></li>
-          <li><span class="shortcut-keys"><kbd>Shift</kbd> + <kbd>Tab</kbd></span><span class="shortcut-description">${this.t("shortcutOutdent")}</span></li>
-        </ul>
-      </section>` : nothing}
+      ${this.renderShortcutHints()}
       ${this.depthLimitOpen ? html`<div class="modal-backdrop" @click=${(event: MouseEvent) => { if (event.target === event.currentTarget) this.depthLimitOpen = false; }}>
         <section class="depth-limit-modal" role="alertdialog" aria-modal="true" aria-labelledby="depth-limit-title" aria-describedby="depth-limit-message">
           <h2 id="depth-limit-title">${this.t("depthLimitTitle")}</h2>
@@ -786,7 +790,6 @@ export class OrganizerApp extends LitElement {
           <button @click=${() => { this.depthLimitOpen = false; }}>${this.t("close")}</button>
         </section>
       </div>` : nothing}
-      <span class="storage-note" title=${this.t("savedHereTitle")}>${this.t("savedHere")}</span>
       ${this.storageSaveFailed ? html`<div class="save-error" role="alert">${this.t("saveError")}</div>` : nothing}
       ${this.toast ? html`<div class="toast ${this.storageSaveFailed ? "raised" : ""}" role="status">${this.toast}</div>` : nothing}
       <p class="sr-only" aria-live="polite">${this.status}</p>
