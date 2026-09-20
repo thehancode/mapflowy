@@ -64,6 +64,7 @@ export class OrganizerApp extends LitElement {
     svg { display: block; width: 100%; height: 100%; }
     .topbar { position: absolute; z-index: 10; top: 1rem; left: 1rem; right: 1rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; pointer-events: none; }
     .brand-location { display: flex; flex: 1; align-items: flex-start; gap: .75rem; min-width: 0; max-width: calc(50% - 220px); }
+    .brand-controls { display: flex; width: 3.05rem; flex: 0 0 3.05rem; flex-direction: column; align-items: center; gap: .65rem; }
     .app-logo { display: flex; align-items: center; justify-content: center; width: 3.05rem; height: 3.05rem; flex: 0 0 3.05rem; padding: .28rem; border: 1px solid transparent; pointer-events: none; user-select: none; }
     .app-logo.voronoi { border-color: var(--panel-border); border-radius: 14px; background: color-mix(in srgb, var(--panel) 80%, white); box-shadow: 0 12px 36px var(--shadow); backdrop-filter: blur(16px); }
     .app-logo img { display: block; width: 100%; height: auto; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
@@ -86,13 +87,13 @@ export class OrganizerApp extends LitElement {
     .icon-button svg, .context-toolbar svg, .sidebar-toggle svg, .back-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
     .switcher { position: absolute; z-index: 10; top: 1rem; left: 50%; transform: translateX(-50%); }
     .left-actions { --left-action-gap: .45rem; position: absolute; z-index: 12; left: 1rem; bottom: 1rem; display: flex; flex-direction: column; align-items: flex-start; gap: var(--left-action-gap); }
-    .sidebar-toggle { display: inline-flex; align-items: center; gap: .55rem; min-height: 2.25rem; padding: 0 .75rem 0 .55rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); cursor: pointer; }
+    .sidebar-toggle { display: inline-flex; align-items: center; gap: .55rem; min-height: 2.25rem; padding: 0 .75rem 0 .55rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); cursor: pointer; transition: background-color .14s ease; }
     .sidebar-toggle-label { color: var(--muted); font-size: .72rem; font-weight: 700; }
     .quick-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--left-action-gap); }
     .node-actions { display: flex; align-items: center; gap: var(--left-action-gap); }
-    .quick-action-button { display: inline-flex; align-items: center; gap: .55rem; min-height: 2rem; padding: .42rem .7rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .72rem; font-weight: 700; cursor: pointer; }
+    .quick-action-button { display: inline-flex; align-items: center; gap: .55rem; min-height: 2rem; padding: .42rem .7rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .72rem; font-weight: 700; cursor: pointer; transition: background-color .14s ease; }
     .quick-action-button kbd { color: var(--ink); }
-    .quick-action-button:hover { background: var(--row-hover); }
+    .sidebar-toggle:hover, .quick-action-button:hover { background: var(--row-hover); }
     .back-button { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); pointer-events: auto; cursor: pointer; }
     .map-sidebar { display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
     .map-sidebar h2 { margin: 0; padding: .85rem 1rem; border-bottom: 1px solid var(--panel-border); background: color-mix(in srgb, #88afe0 18%, transparent); color: var(--ink); font-size: .72rem; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
@@ -937,7 +938,10 @@ export class OrganizerApp extends LitElement {
       <div class="stage ${this.view === "file" ? "file" : ""}" @mousedown=${this.onNodeMouseDown} @auxclick=${this.onNodeAuxClick}>${this.view === "voronoi" ? this.renderVoronoi() : this.view === "tree" ? this.renderTree() : this.renderFileTree()}</div>
       <div class="topbar">
         <div class="brand-location">
-        <span class="app-logo ${this.view === "voronoi" ? "voronoi" : ""}" aria-hidden="true"><img src="/icon.svg" width="80" height="34" alt="" draggable="false" /></span>
+        <div class="brand-controls">
+          <span class="app-logo ${this.view === "voronoi" ? "voronoi" : ""}" aria-hidden="true"><img src="/icon.svg" width="80" height="34" alt="" draggable="false" /></span>
+          ${this.view === "voronoi" && this.path.length > 1 ? html`<button class="back-button" aria-label=${this.t("goUpOneLevel")} title=${this.t("goBack")} @click=${this.goBack}>${this.renderIcon("back")}</button>` : nothing}
+        </div>
         <div class="location-controls">
           <div class="crumbs crumb-measure" aria-hidden="true">${this.path.map((node, index) => html`${index ? html`<span class="separator">/</span>` : nothing}<span class="crumb" aria-current=${index === this.path.length - 1 ? "location" : nothing}>${node.name}</span>`)}</div>
           <nav class="crumbs" aria-label=${this.t("currentLocation")} title=${this.path.map((node) => node.name).join(" / ")}>${this.path.map((node, index) => {
@@ -946,7 +950,6 @@ export class OrganizerApp extends LitElement {
             }
             return html`${index ? html`<span class="separator" aria-hidden="true">/</span>` : nothing}<button class="crumb" title=${node.name} aria-current=${index === this.path.length - 1 ? "location" : nothing} @click=${() => this.chooseBreadcrumb(node, index)}>${node.name}</button>`;
           })}</nav>
-          ${this.view === "voronoi" && this.path.length > 1 ? html`<button class="back-button" aria-label=${this.t("goUpOneLevel")} title=${this.t("goBack")} @click=${this.goBack}>${this.renderIcon("back")}</button>` : nothing}
         </div>
         </div>
         <div class="top-actions"><button class="icon-button theme-toggle" aria-pressed=${this.theme === "dark"} aria-label=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} title=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} @click=${this.toggleTheme}>${this.renderIcon(this.theme === "dark" ? "sun" : "moon")}</button><button class="language-toggle" aria-label=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} title=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} @click=${() => this.setLanguage(this.language === "en" ? "es" : "en")}>${this.language === "en" ? "ES" : "EN"}</button></div>
