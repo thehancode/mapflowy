@@ -6,6 +6,7 @@ export type OrganizerView = "voronoi" | "tree" | "file";
 
 @customElement("view-switcher")
 export class ViewSwitcher extends LitElement {
+  @property({ type: Boolean, reflect: true }) mobile = false;
   @property({ reflect: true }) view: OrganizerView = "voronoi";
   @property({ reflect: true }) language: OrganizerLanguage = "en";
 
@@ -16,6 +17,8 @@ export class ViewSwitcher extends LitElement {
     button[aria-pressed="true"] { background: var(--ink); color: var(--background); }
     .view-key { padding: .15rem .38rem; border: 1px solid var(--panel-border); border-bottom-width: 2px; border-radius: 5px; background: var(--kbd); color: var(--ink); font: 700 .72rem system-ui; }
     button:focus-visible { outline: 2px solid #eb4d28; outline-offset: 2px; }
+    :host([mobile]) .view-key { display: none; }
+    :host([mobile]) button { min-height: 48px; padding: 0 .8rem; font-size: .85rem; }
     @media (max-width: 520px) { button { padding: 0 .66rem; font-size: .7rem; } }
   `;
 
@@ -25,10 +28,13 @@ export class ViewSwitcher extends LitElement {
   }
 
   render() {
+    const label = (key: 'voronoiView' | 'graphView' | 'treeView') => this.mobile
+      ? ({ voronoiView: 'Voronoi', graphView: this.language === 'es' ? 'Grafo' : 'Graph', treeView: this.language === 'es' ? 'Árbol' : 'Tree' })[key]
+      : translate(this.language, key);
     return html`<div role="group" aria-label=${translate(this.language, "displayMode")}>
-      <button aria-pressed=${this.view === "voronoi"} @click=${() => this.choose("voronoi")}><span class="view-key" aria-hidden="true">1</span>${translate(this.language, "voronoiView")}</button>
-      <button aria-pressed=${this.view === "tree"} @click=${() => this.choose("tree")}><span class="view-key" aria-hidden="true">2</span>${translate(this.language, "graphView")}</button>
-      <button aria-pressed=${this.view === "file"} @click=${() => this.choose("file")}><span class="view-key" aria-hidden="true">3</span>${translate(this.language, "treeView")}</button>
+      <button aria-pressed=${this.view === "voronoi"} @click=${() => this.choose("voronoi")}><span class="view-key" aria-hidden="true">1</span>${label("voronoiView")}</button>
+      <button aria-pressed=${this.view === "tree"} @click=${() => this.choose("tree")}><span class="view-key" aria-hidden="true">2</span>${label("graphView")}</button>
+      <button aria-pressed=${this.view === "file"} @click=${() => this.choose("file")}><span class="view-key" aria-hidden="true">3</span>${label("treeView")}</button>
     </div>`;
   }
 }
