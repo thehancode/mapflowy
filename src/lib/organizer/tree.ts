@@ -1,6 +1,7 @@
 import type { OrganizerNode, TreeEntry, Point, LayoutEntry, RadialTreeLayout } from './types';
 
 export const ELEMENT_TEXT_LIMIT = 4096;
+export const GRAPH_ROOT_RADIUS = 24;
 
 export function normalizeElementText(value: string, fallback = 'Untitled'): string {
   return (value.trim() || fallback).slice(0, ELEMENT_TEXT_LIMIT);
@@ -131,8 +132,15 @@ export function radialTreeLayout(root: OrganizerNode, width: number, height: num
   const place = (node: OrganizerNode, start: number, end: number, depth: number) => {
     const entry = byId.get(node.id)!; const angle = (start + end) / 2; const radius = depth / maxDepth;
     Object.assign(entry, { angle, radius, x: centerX + Math.cos(angle) * radius * outerRadiusX, y: centerY + Math.sin(angle) * radius * outerRadiusY });
-    let cursor = start; const total = leaves.get(node.id)!;
-    node.children.forEach((child) => { const span = (end - start) * leaves.get(child.id)! / total; place(child, cursor, cursor + span, depth + 1); cursor += span; });
+    const clockwise = depth === 0 || entry.y <= centerY + GRAPH_ROOT_RADIUS;
+    let cursor = clockwise ? start : end; const total = leaves.get(node.id)!;
+    node.children.forEach((child) => {
+      const span = (end - start) * leaves.get(child.id)! / total;
+      const childStart = clockwise ? cursor : cursor - span;
+      const childEnd = clockwise ? cursor + span : cursor;
+      place(child, childStart, childEnd, depth + 1);
+      cursor += clockwise ? span : -span;
+    });
   };
   place(root, -Math.PI / 2, Math.PI * 3 / 2, 0);
   const nodes = entries.map(({ node }) => byId.get(node.id)!);

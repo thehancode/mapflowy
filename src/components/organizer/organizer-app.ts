@@ -3,7 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import "./view-switcher";
 import type { OrganizerLanguage, OrganizerNode, OrganizerWorkspaceDocument, Point, LayoutEntry, OrganizerTheme, TranslationKey } from "../../lib/organizer";
 import {
-  circleLayout, collectNodeIds, createRepository, createTutorialTree, createUserConfigRepository, duplicateTree, ELEMENT_TEXT_LIMIT, findEntry, flattenTree, fitLabel, newNodeId, normalizeElementText,
+  circleLayout, collectNodeIds, createRepository, createTutorialTree, createUserConfigRepository, duplicateTree, ELEMENT_TEXT_LIMIT, findEntry, flattenTree, fitLabel, GRAPH_ROOT_RADIUS, newNodeId, normalizeElementText,
   polygonArea, polygonBottomBand, polygonCentroid, radialArcPath, radialLinkPath, radialTreeLayout, roundedPolygonPath, visibleItems,
   translate, viewportEdgeBand, viewportEdgeOverlayPath, viewportEdges, viewportEdgeSpan, voronoiPathForSelection, voronoiPolygons,
 } from "../../lib/organizer";
@@ -636,7 +636,7 @@ export class OrganizerApp extends LitElement {
     return html`<svg viewBox="0 0 ${this.width} ${this.height}" role="img" aria-label=${this.t("completeProjectGraph")}>
       ${layout.links.map(({ source, target }) => svg`<path class="tree-link" fill="none" d=${radialLinkPath(source, target, layout.centerX, layout.centerY, layout.outerRadiusX, layout.outerRadiusY)}></path>`)}
       ${layout.nodes.map((entry) => {
-        const current = entry.node.id === this.current.id, selected = entry.node.id === this.selectedId, radius = entry.depth === 0 ? 24 : 19;
+        const current = entry.node.id === this.current.id, selected = entry.node.id === this.selectedId, radius = entry.depth === 0 ? GRAPH_ROOT_RADIUS : 19;
         return svg`<g class="tree-node ${current ? "current" : ""}" data-node-id=${entry.node.id} tabindex="0" role="button" aria-label=${this.t("nodeLevel", { name: entry.node.name, level: entry.depth + 1 })} transform="translate(${entry.x} ${entry.y})" @click=${() => this.chooseTreeNode(entry)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") this.chooseTreeNode(entry); }}>
           <title>${entry.node.name}</title>
           <circle class="core" r=${radius} fill=${palette[hashString(entry.node.id) % palette.length]}></circle>
