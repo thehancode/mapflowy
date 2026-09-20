@@ -17,4 +17,14 @@ describe("Mapflowy tutorial tree", () => {
       expect(flattenTree(createTutorialTree(language)).every(({ node }) => node.name.length <= TUTORIAL_LABEL_LIMIT)).toBe(true);
     }
   });
+
+  it("orders the main lessons by navigation, editing, creation, and views", () => {
+    expect(createTutorialTree("en").children.map(({ name }) => name)).toEqual(["Move around", "Edit nodes", "Create nodes", "Change views"]);
+  });
+
+  it("includes the click instructions for creating and editing nodes", () => {
+    const tutorial = createTutorialTree("en");
+    expect(tutorial.children.find(({ id }) => id === "tutorial-create")?.children.map(({ name }) => name)).toEqual(["Press N", "Click the ring", "Click the +"]);
+    expect(tutorial.children.find(({ id }) => id === "tutorial-edit")?.children.map(({ name }) => name)).toEqual(["Press E", "Click the text", "Right-click actions"]);
+  });
 });

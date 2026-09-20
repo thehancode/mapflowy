@@ -11,6 +11,13 @@ describe("organizer translations", () => {
     expect([translate("es", "voronoiView"), translate("es", "graphView"), translate("es", "treeView")]).toEqual(["Vista Voronoi", "Vista Grafo", "Vista Árbol"]);
   });
 
+  it("uses localized creation labels", () => {
+    expect(translate("en", "newTree")).toBe("New tree");
+    expect(translate("es", "newTree")).toBe("Nuevo árbol");
+    expect(translate("en", "addChildNode")).toBe("Add child-node");
+    expect(translate("es", "addChildNode")).toBe("Añadir nodo-hijo");
+  });
+
   it("interpolates dynamic values", () => {
     expect(translate("es", "nowChildOf", { name: "Tarea", parent: "Proyecto" })).toBe("Tarea es ahora un nodo-hijo de Proyecto.");
   });

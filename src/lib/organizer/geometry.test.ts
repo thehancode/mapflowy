@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { circleLayout, polygonArea, polygonBottomBand, viewportEdgeOverlayPath, viewportEdges, voronoiPolygons } from "./geometry";
+import { circleLayout, polygonArea, polygonBottomBand, radialArcPath, viewportEdgeOverlayPath, viewportEdges, voronoiPolygons } from "./geometry";
 
 describe("organizer geometry", () => {
   it("places a single item at the center", () => {
     expect(circleLayout(1)).toEqual([{ x: .5, y: .5 }]);
+  });
+
+  it("draws the long Graph-view arc while leaving the bottom quarter open", () => {
+    expect(radialArcPath(10, 225, -45, true)).toBe("M -7.0711 7.0711 A 10 10 0 1 1 7.0711 7.0711");
   });
 
   it("partitions the complete stage area", () => {

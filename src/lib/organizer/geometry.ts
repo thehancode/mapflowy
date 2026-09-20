@@ -64,6 +64,16 @@ export function circleLayout(count: number): Point[] {
   const radius = count === 2 ? .27 : Math.min(.38, .29 + count * .008);
   return Array.from({ length: count }, (_, index) => { const angle = -Math.PI / 2 + index * Math.PI * 2 / count; return { x: .5 + Math.cos(angle) * radius, y: .5 + Math.sin(angle) * radius }; });
 }
+
+export function radialArcPath(radius: number, startAngle: number, endAngle: number, largeArc = false, sweep: 0 | 1 = 1): string {
+  const point = (angle: number): Point => {
+    const radians = angle * Math.PI / 180;
+    return { x: Math.cos(radians) * radius, y: -Math.sin(radians) * radius };
+  };
+  const format = (value: number) => Math.abs(value) < 1e-10 ? "0" : String(Number(value.toFixed(4)));
+  const start = point(startAngle), end = point(endAngle);
+  return `M ${format(start.x)} ${format(start.y)} A ${format(radius)} ${format(radius)} 0 ${largeArc ? 1 : 0} ${sweep} ${format(end.x)} ${format(end.y)}`;
+}
 export function clipPolygon(polygon: Polygon, nx: number, ny: number, constant: number): Polygon {
   const output: Point[] = [];
   for (let i = 0; i < polygon.length; i += 1) {
