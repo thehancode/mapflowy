@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { circleLayout, polygonArea, polygonBottomBand, radialArcPath, viewportEdgeOverlayPath, viewportEdges, voronoiPolygons } from "./geometry";
+import { circleLayout, graphNodeLabelLines, polygonArea, polygonBottomBand, radialArcPath, viewportEdgeOverlayPath, viewportEdges, voronoiPolygons } from "./geometry";
 
 describe("organizer geometry", () => {
   it("places a single item at the center", () => {
     expect(circleLayout(1)).toEqual([{ x: .5, y: .5 }]);
+  });
+
+  it("keeps words together on the first graph-label line and truncates the second", () => {
+    expect(graphNodeLabelLines("x".repeat(20))).toEqual(["x".repeat(20)]);
+    expect(graphNodeLabelLines(`${"x".repeat(20)} ${"y".repeat(19)}`)).toEqual(["x".repeat(20), "y".repeat(19)]);
+    expect(graphNodeLabelLines(`A ${"x".repeat(18)} word next`)).toEqual([`A ${"x".repeat(18)}`, "word next"]);
+    expect(graphNodeLabelLines(`${"x".repeat(20)} ${"y".repeat(21)}`)).toEqual(["x".repeat(20), `${"y".repeat(17)}...`]);
   });
 
   it("draws the long Graph-view arc while leaving the bottom quarter open", () => {

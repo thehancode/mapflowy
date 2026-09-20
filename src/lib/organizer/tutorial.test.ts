@@ -31,14 +31,14 @@ describe("Mapflowy tutorial tree", () => {
       'Add nodes with "A"',
       "Right-click for copy and delete",
       "Ideas flow better with keyboard",
-      "Strikethrough with middle click or space space",
+      "Strikethrough nodes with middle click",
       'Edit nodes with "E"',
     ]);
     expect(createTutorialTree("es").children.map(({ name }) => name)).toEqual([
       'Añade nodos con "A"',
       "Clic derecho para copiar y eliminar",
       "Las ideas fluyen mejor con el teclado",
-      "Tacha con clic central o doble espacio",
+      "Tacha nodos con clic central",
       'Edita nodos con "E"',
     ]);
   });

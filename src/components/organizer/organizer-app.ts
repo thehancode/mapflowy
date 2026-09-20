@@ -3,7 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import "./view-switcher";
 import type { OrganizerLanguage, OrganizerNode, OrganizerWorkspaceDocument, Point, LayoutEntry, OrganizerTheme, TranslationKey, TutorialDocument } from "../../lib/organizer";
 import {
-  canPlaceSubtreeAtDepth, circleLayout, collectNodeIds, createOnboardingRepository, createRepository, createTutorialDocument, createTutorialRepository, createUserConfigRepository, duplicateMap, ELEMENT_TEXT_LIMIT, emptyWorkspace, findEntry, flattenTree, fitLabel, GRAPH_ROOT_RADIUS, localizeTutorialDocument, MAX_TREE_LEVELS, newNodeId, normalizeElementText,
+  canPlaceSubtreeAtDepth, circleLayout, collectNodeIds, createOnboardingRepository, createRepository, createTutorialDocument, createTutorialRepository, createUserConfigRepository, duplicateMap, ELEMENT_TEXT_LIMIT, emptyWorkspace, findEntry, flattenTree, fitLabel, GRAPH_ROOT_RADIUS, graphNodeLabelLines, localizeTutorialDocument, MAX_TREE_LEVELS, newNodeId, normalizeElementText,
   polygonArea, polygonBottomBand, polygonCentroid, radialArcPath, radialLinkPath, radialTreeLayout, removeWorkspaceMap, roundedPolygonPath, visibleItems,
   translate, viewportEdgeBand, viewportEdgeOverlayPath, viewportEdges, viewportEdgeSpan, voronoiPathForSelection, voronoiPolygons,
 } from "../../lib/organizer";
@@ -50,14 +50,15 @@ export class OrganizerApp extends LitElement {
   @state() private contextMenu: ContextMenuState | null = null;
   @state() private toast = "";
   @state() private storageSaveFailed = false;
+  @state() private compactBreadcrumbs = false;
   private readonly repository = createRepository();
   private resizeObserver?: ResizeObserver;
   private treeCycles = new Map<string, number>();
   private toastTimer?: number;
 
   static styles = css`
-    :host { --ink: #171a17; --background: #e8e7de; --file-background: #f4f3ec; --panel: rgba(250,249,244,.88); --panel-border: rgba(23,26,23,.13); --shadow: rgba(23,26,23,.12); --muted: #686a63; --cell-gap: #faf9f4; --edge-overlay-hover: rgba(255,255,255,.18); --row-hover: rgba(255,255,255,.58); --row-selected: #fff; --editor: rgba(255,255,255,.96); --dialog: #faf9f4; --kbd: #fff; display: block; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; color: var(--ink); background: var(--background); color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-    :host([theme="dark"]) { --ink: #f2f0e8; --background: #151612; --file-background: #1b1c18; --panel: rgba(35,36,31,.9); --panel-border: rgba(242,240,232,.16); --shadow: rgba(0,0,0,.38); --muted: #aaa99f; --cell-gap: #151612; --edge-overlay-hover: color-mix(in srgb, var(--ink) 14%, transparent); --row-hover: rgba(255,255,255,.06); --row-selected: #292a24; --editor: rgba(38,39,34,.98); --dialog: #23241f; --kbd: #30312b; color-scheme: dark; }
+    :host { --ink: #171a17; --selection: var(--ink); --background: #e8e7de; --file-background: #f4f3ec; --panel: rgba(250,249,244,.88); --panel-border: rgba(23,26,23,.13); --shadow: rgba(23,26,23,.12); --muted: #686a63; --cell-gap: #faf9f4; --edge-overlay-hover: rgba(255,255,255,.18); --row-hover: rgba(255,255,255,.58); --row-selected: #fff; --editor: rgba(255,255,255,.96); --dialog: #faf9f4; --kbd: #fff; display: block; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; color: var(--ink); background: var(--background); color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    :host([theme="dark"]) { --ink: #f2f0e8; --selection: #b8bab2; --background: #151612; --file-background: #1b1c18; --panel: rgba(35,36,31,.9); --panel-border: rgba(242,240,232,.16); --shadow: rgba(0,0,0,.38); --muted: #aaa99f; --cell-gap: #151612; --edge-overlay-hover: color-mix(in srgb, var(--ink) 14%, transparent); --row-hover: rgba(255,255,255,.06); --row-selected: #292a24; --editor: rgba(38,39,34,.98); --dialog: #23241f; --kbd: #30312b; color-scheme: dark; }
     * { box-sizing: border-box; }
     button, input { font: inherit; }
     .workspace { position: relative; width: 100%; height: 100%; overflow: hidden; outline: none; background: var(--background); }
@@ -65,9 +66,16 @@ export class OrganizerApp extends LitElement {
     .stage.file { overflow: auto; background: var(--file-background); }
     svg { display: block; width: 100%; height: 100%; }
     .topbar { position: absolute; z-index: 10; top: 1rem; left: 1rem; right: 1rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; pointer-events: none; }
-    .location-controls { display: flex; flex-direction: column; align-items: flex-start; gap: .65rem; pointer-events: none; }
+    .brand-location { display: flex; flex: 1; align-items: flex-start; gap: .75rem; min-width: 0; max-width: calc(50% - 220px); }
+    .app-logo { display: flex; align-items: center; width: 80px; min-height: 44px; flex: 0 0 80px; pointer-events: none; user-select: none; }
+    .app-logo img { display: block; width: 100%; height: 34px; user-select: none; -webkit-user-drag: none; }
+    .location-controls { position: relative; display: flex; flex: 1; flex-direction: column; align-items: flex-start; min-width: 0; gap: .65rem; pointer-events: none; }
     .crumbs, .top-actions { pointer-events: auto; border: 1px solid var(--panel-border); background: var(--panel); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); }
-    .crumbs { display: flex; flex-wrap: wrap; gap: .42rem; max-width: min(64vw, 760px); padding: .65rem .85rem; border-radius: 14px; font-size: .8rem; font-weight: 740; }
+    .crumbs { display: flex; flex-wrap: nowrap; align-items: center; gap: .42rem; width: max-content; max-width: 100%; min-height: 44px; overflow: hidden; padding: .65rem .85rem; border-radius: 14px; font-size: .8rem; font-weight: 740; user-select: none; }
+    .crumbs > .separator, .crumb-ellipsis { flex-shrink: 0; }
+    .crumb-measure { position: absolute; visibility: hidden; pointer-events: none; max-width: none; width: max-content; }
+    .crumb-measure .crumb { flex-shrink: 0; }
+    .crumb-ellipsis { color: var(--muted); }
     .crumb { min-width: 0; max-width: min(28vw, 260px); overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--muted); font-weight: 560; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; }
     .crumb[aria-current="location"] { color: var(--ink); font-weight: 740; }
     .crumb:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
@@ -106,7 +114,7 @@ export class OrganizerApp extends LitElement {
     .cell:hover .cell-shape { filter: brightness(.97) saturate(1.05); }
     .cell-outline { fill: none; stroke: var(--cell-gap); stroke-width: 12; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
     .cell-label { fill: var(--ink); font-weight: 760; text-anchor: middle; cursor: text; user-select: none; paint-order: stroke; stroke: var(--cell-gap); stroke-width: 3px; stroke-linejoin: round; }
-    .selection { fill: none; stroke: var(--ink); stroke-width: 20; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
+    .selection { fill: none; stroke: var(--selection); stroke-width: 20; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
     .edge-bands { cursor: cell; outline: none; }
     .edge-strip { fill: transparent; stroke: none; transition: fill .14s ease; }
     .edge-bands:hover .edge-strip, .edge-bands:focus-visible .edge-strip { fill: var(--edge-overlay-hover); }
@@ -115,7 +123,7 @@ export class OrganizerApp extends LitElement {
     .tree-link { stroke: color-mix(in srgb, var(--ink) 25%, transparent); stroke-width: 2; vector-effect: non-scaling-stroke; }
     .tree-node { cursor: pointer; outline: none; }
     .tree-node .core { stroke: var(--cell-gap); stroke-width: 4; vector-effect: non-scaling-stroke; }
-    .tree-node.current .core { stroke: var(--ink); stroke-width: 5; }
+    .tree-node.current .core { stroke: var(--selection); stroke-width: 5; }
     .tree-node text { fill: var(--ink); font-size: 12px; font-weight: 750; text-anchor: middle; paint-order: stroke; stroke: var(--background); stroke-width: 3px; cursor: text; user-select: none; }
     .add-ring { fill: none; stroke: var(--ink); stroke-width: 8; stroke-linecap: round; opacity: .12; cursor: crosshair; vector-effect: non-scaling-stroke; }
     .add-ring:hover { opacity: .65; }
@@ -144,10 +152,17 @@ export class OrganizerApp extends LitElement {
     kbd { padding: .15rem .38rem; border: 1px solid var(--panel-border); border-bottom-width: 2px; border-radius: 5px; background: var(--kbd); font: 700 .72rem system-ui; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     :focus-visible { outline: 2px solid #eb4d28; outline-offset: 2px; }
+    @media (max-width: 1000px) {
+      .switcher { top: 4.5rem; }
+      .brand-location { max-width: calc(100% - 110px); }
+    }
     @media (max-width: 600px) {
       .topbar { top: .65rem; left: .65rem; right: .65rem; }
       .switcher { top: 4.15rem; }
-      .crumbs { max-width: calc(100vw - 11.5rem); }
+      .brand-location { gap: .4rem; }
+      .app-logo { width: 60px; flex-basis: 60px; }
+      .app-logo img { height: 26px; }
+      .crumbs { padding-inline: .55rem; }
       .left-actions { left: .65rem; bottom: .65rem; }
       .shortcut-hints { right: .65rem; bottom: .65rem; }
       .shortcut-hint { max-width: calc(100vw - 1.3rem); }
@@ -182,6 +197,11 @@ export class OrganizerApp extends LitElement {
   }
 
   protected updated(changed: PropertyValues): void {
+    const measure = this.renderRoot.querySelector<HTMLElement>(".crumb-measure");
+    const location = this.renderRoot.querySelector<HTMLElement>(".location-controls");
+    if (measure && location) {
+      this.compactBreadcrumbs = this.path.length > 3 && measure.getBoundingClientRect().width > location.clientWidth;
+    }
     if (changed.has("draft") && this.draft) requestAnimationFrame(() => {
       const input = this.renderRoot.querySelector<HTMLInputElement>("[data-draft]");
       input?.focus();
@@ -239,8 +259,11 @@ export class OrganizerApp extends LitElement {
     this.workspace = await this.repository.load();
     this.tutorialDocument = this.tutorialRepository.load(this.language);
     this.tutorialOpen = firstVisit || this.workspace.maps.length === 0;
-    this.sidebarOpen = firstVisit;
-    if (firstVisit) this.onboardingRepository.markSeen();
+    this.sidebarOpen = false;
+    if (firstVisit) {
+      this.view = "tree";
+      this.onboardingRepository.markSeen();
+    }
     this.path = [this.root]; this.selectedId = this.root.id; this.treeCycles.clear();
     this.setStatus(this.t("loaded", { name: this.root.name }));
   }
@@ -511,10 +534,13 @@ export class OrganizerApp extends LitElement {
     if (this.tutorialOpen) {
       this.tutorialDocument = { ...this.tutorialDocument, customTextIds: [...new Set([...this.tutorialDocument.customTextIds, id])] };
     }
-    const entry = findEntry(this.root, mode === "create" ? parentId : id)!;
+    const entry = this.view === "file" && mode === "create"
+      ? findEntry(this.root, id)!
+      : findEntry(this.root, mode === "create" ? parentId : id)!;
     this.selectedId = entry.node.id;
     if (this.view !== "voronoi") this.path = entry.path;
     this.persist(); this.setStatus(this.t(mode === "edit" ? "renamed" : "created", { name }));
+    if (this.view === "file" && mode === "create") this.focusNode(id);
   }
 
   private cancelDraft(): void {
@@ -728,12 +754,14 @@ export class OrganizerApp extends LitElement {
       ${layout.links.map(({ source, target }) => svg`<path class="tree-link" fill="none" d=${radialLinkPath(source, target, layout.centerX, layout.centerY, layout.outerRadiusX, layout.outerRadiusY)}></path>`)}
       ${layout.nodes.map((entry) => {
         const current = entry.node.id === this.current.id, selected = entry.node.id === this.selectedId, radius = entry.depth === 0 ? GRAPH_ROOT_RADIUS : 19;
+        const labelLines = graphNodeLabelLines(entry.node.name);
+        const labelY = entry.depth === 0 ? 39 : 34;
         return svg`<g class="tree-node ${current ? "current" : ""}" data-node-id=${entry.node.id} tabindex="0" role="button" aria-label=${this.t("nodeLevel", { name: entry.node.name, level: entry.depth + 1 })} transform="translate(${entry.x} ${entry.y})" @click=${() => this.chooseTreeNode(entry)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") this.chooseTreeNode(entry); }}>
           <title>${entry.node.name}</title>
           <circle class="core" r=${radius} fill=${palette[hashString(entry.node.id) % palette.length]}></circle>
-          ${selected ? svg`<circle r=${radius + 4} fill="none" stroke="var(--ink)" stroke-width="2"></circle>` : nothing}
+          ${selected ? svg`<circle r=${radius + 4} fill="none" stroke="var(--selection)" stroke-width="2"></circle>` : nothing}
           ${svg`<path class="add-ring" d=${radialArcPath(radius + 8, 225, -45, true)} aria-label=${this.t("addChildren")} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}><title>${this.t("addChildren")}</title></path>`}
-          <text y=${entry.depth === 0 ? 39 : 34} @click=${(event: MouseEvent) => { event.stopPropagation(); this.beginEdit(entry.node.id); }}>${entry.node.name.length > 22 ? `${entry.node.name.slice(0, 20)}…` : entry.node.name}</text>
+          <text y=${labelY} @click=${(event: MouseEvent) => { event.stopPropagation(); this.beginEdit(entry.node.id); }}>${labelLines.map((line, index) => svg`<tspan x="0" dy=${labelLines.length === 1 ? "0" : index === 0 ? "-.55em" : "1.1em"}>${line}</tspan>`)}</text>
         </g>`;
       })}
     </svg>${this.renderFloatingEditor([], [])}`;
@@ -741,7 +769,7 @@ export class OrganizerApp extends LitElement {
 
   private renderFileTree() {
     return html`<div class="file-tree" role="tree" aria-label=${this.t("projectTree")}>${flattenTree(this.root).map((entry) => html`
-      <div class="file-row ${entry.node.id === this.selectedId ? "selected" : ""}" data-node-id=${entry.node.id} tabindex="-1" style="--depth:${entry.depth}" role="treeitem" aria-level=${entry.depth + 1} aria-selected=${entry.node.id === this.selectedId} @click=${() => { if (!this.draft) { this.path = entry.path; this.select(entry.node.id); } }} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)}>
+      <div class="file-row ${entry.node.id === this.selectedId ? "selected" : ""}" data-node-id=${entry.node.id} tabindex="-1" style="--depth:${entry.depth}" role="treeitem" aria-level=${entry.depth + 1} aria-selected=${entry.node.id === this.selectedId} @click=${() => { if (!this.draft) { this.path = entry.path; this.select(entry.node.id); } }} @dblclick=${() => this.beginEdit(entry.node.id)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)}>
         <span class="branch" style=${`color:${treeLevelColors[entry.depth % treeLevelColors.length]}`} aria-hidden="true">${treeLevelSymbols[entry.depth % treeLevelSymbols.length]}</span>
         ${entry.node.id === this.draft?.id ? html`<input data-draft class="file-editor" maxlength=${ELEMENT_TEXT_LIMIT} aria-label=${this.t(this.draft.mode === "edit" ? "editorEdit" : "editorNew")} .value=${this.draft.mode === "edit" ? entry.node.name : ""} @click=${(event: Event) => event.stopPropagation()} @keydown=${this.draftKey} @blur=${(event: FocusEvent) => this.commitDraft(event.currentTarget as HTMLInputElement)} />` : html`<span class="name" title=${entry.node.id === this.selectedId ? nothing : entry.node.name}>${entry.node.name}</span><span class="meta">${entry.node.children.length ? this.t(entry.node.children.length === 1 ? "childCountOne" : "childCountMany", { count: entry.node.children.length }) : ""}</span>`}
       </div>`)} </div>`;
@@ -816,9 +844,18 @@ export class OrganizerApp extends LitElement {
     return html`<main class="workspace" lang=${this.language} tabindex="0" role="application" aria-label="Mapflowy" @pointerdown=${(event: PointerEvent) => this.workspacePointerDown(event)}>
       <div class="stage ${this.view === "file" ? "file" : ""}">${this.view === "voronoi" ? this.renderVoronoi() : this.view === "tree" ? this.renderTree() : this.renderFileTree()}</div>
       <div class="topbar">
+        <div class="brand-location">
+        <span class="app-logo" aria-hidden="true"><img src="/icon.svg" width="80" height="34" alt="" draggable="false" /></span>
         <div class="location-controls">
-          <nav class="crumbs" aria-label=${this.t("currentLocation")}>${this.path.map((node, index) => html`${index ? html`<span class="separator" aria-hidden="true">/</span>` : nothing}<button class="crumb" aria-current=${index === this.path.length - 1 ? "location" : nothing} @click=${() => this.chooseBreadcrumb(node, index)}>${node.name}</button>`)}</nav>
+          <div class="crumbs crumb-measure" aria-hidden="true">${this.path.map((node, index) => html`${index ? html`<span class="separator">/</span>` : nothing}<span class="crumb" aria-current=${index === this.path.length - 1 ? "location" : nothing}>${node.name}</span>`)}</div>
+          <nav class="crumbs" aria-label=${this.t("currentLocation")} title=${this.path.map((node) => node.name).join(" / ")}>${this.path.map((node, index) => {
+            if (this.compactBreadcrumbs && index > 0 && index < this.path.length - 2) {
+              return index === 1 ? html`<span class="separator" aria-hidden="true">/</span><span class="crumb-ellipsis" title=${this.path.slice(1, -2).map((ancestor) => ancestor.name).join(" / ")}>...</span>` : nothing;
+            }
+            return html`${index ? html`<span class="separator" aria-hidden="true">/</span>` : nothing}<button class="crumb" title=${node.name} aria-current=${index === this.path.length - 1 ? "location" : nothing} @click=${() => this.chooseBreadcrumb(node, index)}>${node.name}</button>`;
+          })}</nav>
           ${this.view === "voronoi" && this.path.length > 1 ? html`<button class="back-button" aria-label=${this.t("goUpOneLevel")} title=${this.t("goBack")} @click=${this.goBack}>${this.renderIcon("back")}</button>` : nothing}
+        </div>
         </div>
         <div class="top-actions"><button class="icon-button theme-toggle" aria-pressed=${this.theme === "dark"} aria-label=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} title=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} @click=${this.toggleTheme}>${this.renderIcon(this.theme === "dark" ? "sun" : "moon")}</button><button class="language-toggle" aria-label=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} title=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} @click=${() => this.setLanguage(this.language === "en" ? "es" : "en")}>${this.language === "en" ? "ES" : "EN"}</button></div>
       </div>

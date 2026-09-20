@@ -18,14 +18,14 @@ const tutorialText = {
     addNodes: 'Add nodes with "A"',
     copyDelete: "Right-click for copy and delete",
     keyboard: "Ideas flow better with keyboard",
-    strikethrough: "Strikethrough with middle click or space space",
+    strikethrough: "Strikethrough nodes with middle click",
     editNodes: 'Edit nodes with "E"',
   },
   es: {
     addNodes: 'Añade nodos con "A"',
     copyDelete: "Clic derecho para copiar y eliminar",
     keyboard: "Las ideas fluyen mejor con el teclado",
-    strikethrough: "Tacha con clic central o doble espacio",
+    strikethrough: "Tacha nodos con clic central",
     editNodes: 'Edita nodos con "E"',
   },
 } as const;

@@ -105,5 +105,25 @@ export function viewportEdgeSpan(polygon: Polygon, edge: ViewportEdge, width: nu
 }
 export function polygonArea(points: Polygon): number { return Math.abs(points.reduce((sum, point, i) => { const next = points[(i + 1) % points.length]; return sum + point.x * next.y - next.x * point.y; }, 0) / 2); }
 export function polygonCentroid(points: Polygon): Point { if (points.length < 3) return points[0] ?? { x: 0, y: 0 }; let crossSum = 0, x = 0, y = 0; points.forEach((point, i) => { const next = points[(i + 1) % points.length], cross = point.x * next.y - next.x * point.y; crossSum += cross; x += (point.x + next.x) * cross; y += (point.y + next.y) * cross; }); return Math.abs(crossSum) < 1e-9 ? points[0] : { x: x / (3 * crossSum), y: y / (3 * crossSum) }; }
+export function graphNodeLabelLines(name: string, lineLength = 20): string[] {
+  const characters = Array.from(name);
+  if (characters.length <= lineLength) return [name];
+
+  const words = name.trim().split(/\s+/u);
+  const firstLine: string[] = [];
+  let wordIndex = 0;
+  while (wordIndex < words.length) {
+    const candidate = [...firstLine, words[wordIndex]].join(' ');
+    if (Array.from(candidate).length > lineLength) break;
+    firstLine.push(words[wordIndex]);
+    wordIndex += 1;
+  }
+
+  const secondLine = words.slice(wordIndex).join(' ');
+  const secondCharacters = Array.from(secondLine);
+  return [firstLine.join(' '), secondCharacters.length <= lineLength
+    ? secondLine
+    : `${secondCharacters.slice(0, lineLength - 3).join('')}...`];
+}
 export function fitLabel(name: string, maxWidth: number): { text: string; size: number } { const text = name.length > 28 ? `${name.slice(0, 26)}…` : name; return { text, size: Math.max(11, Math.min(18, maxWidth / Math.max(text.length * .58, 1))) }; }
 export function radialLinkPath(source: { x: number; y: number; angle: number; radius: number }, target: typeof source, centerX: number, centerY: number, outerRadiusX: number, outerRadiusY: number): string { const middle = (source.radius + target.radius) / 2; return `M ${source.x.toFixed(2)} ${source.y.toFixed(2)} C ${(centerX + Math.cos(source.angle) * middle * outerRadiusX).toFixed(2)} ${(centerY + Math.sin(source.angle) * middle * outerRadiusY).toFixed(2)}, ${(centerX + Math.cos(target.angle) * middle * outerRadiusX).toFixed(2)} ${(centerY + Math.sin(target.angle) * middle * outerRadiusY).toFixed(2)}, ${target.x.toFixed(2)} ${target.y.toFixed(2)}`; }
