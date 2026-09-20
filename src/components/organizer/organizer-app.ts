@@ -64,9 +64,9 @@ export class OrganizerApp extends LitElement {
     svg { display: block; width: 100%; height: 100%; }
     .topbar { position: absolute; z-index: 10; top: 1rem; left: 1rem; right: 1rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; pointer-events: none; }
     .brand-location { display: flex; flex: 1; align-items: flex-start; gap: .75rem; min-width: 0; max-width: calc(50% - 220px); }
-    .app-logo { display: flex; align-items: center; width: 80px; min-height: 44px; flex: 0 0 80px; pointer-events: none; user-select: none; }
-    .app-logo.voronoi { border: 1px solid var(--panel-border); border-radius: 14px; background: color-mix(in srgb, var(--panel) 72%, transparent); box-shadow: 0 5px 16px var(--shadow); backdrop-filter: blur(10px); }
-    .app-logo img { display: block; width: 100%; height: 34px; user-select: none; -webkit-user-drag: none; }
+    .app-logo { display: flex; align-items: center; justify-content: center; width: 3.05rem; height: 3.05rem; flex: 0 0 3.05rem; padding: .28rem; border: 1px solid transparent; pointer-events: none; user-select: none; }
+    .app-logo.voronoi { border-color: var(--panel-border); border-radius: 14px; background: color-mix(in srgb, var(--panel) 80%, white); box-shadow: 0 12px 36px var(--shadow); backdrop-filter: blur(16px); }
+    .app-logo img { display: block; width: 100%; height: auto; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
     .location-controls { position: relative; display: flex; flex: 1; flex-direction: column; align-items: flex-start; min-width: 0; gap: .65rem; pointer-events: none; }
     .crumbs, .top-actions { pointer-events: auto; border: 1px solid var(--panel-border); background: var(--panel); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); }
     .crumbs { display: flex; flex-wrap: nowrap; align-items: center; gap: .42rem; width: max-content; max-width: 100%; min-height: 44px; overflow: hidden; padding: .65rem .85rem; border-radius: 14px; font-size: .8rem; font-weight: 740; user-select: none; }
@@ -110,6 +110,7 @@ export class OrganizerApp extends LitElement {
     .context-toolbar button { display: grid; place-items: center; width: 2.35rem; height: 2.35rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
     .context-toolbar button:hover { background: var(--row-hover); }
     .cell { cursor: default; }
+    .cell:focus { outline: none; }
     .cell-shape { transition: filter .14s ease; }
     .cell:hover .cell-shape { filter: brightness(.97) saturate(1.05); }
     .cell-outline { fill: none; stroke: var(--cell-gap); stroke-width: 12; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
@@ -121,7 +122,8 @@ export class OrganizerApp extends LitElement {
     .add-child-sign { fill: #fff; font: 700 28px system-ui, sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; user-select: none; }
     :host([theme="dark"]) .add-child-sign { fill: var(--ink); }
     .tree-link { stroke: color-mix(in srgb, var(--ink) 25%, transparent); stroke-width: 2; vector-effect: non-scaling-stroke; }
-    .tree-node { cursor: pointer; outline: none; }
+    .tree-node { cursor: pointer; }
+    .tree-node:focus { outline: none; }
     .tree-node .core { stroke: var(--cell-gap); stroke-width: 4; vector-effect: non-scaling-stroke; }
     .tree-node.current .core { stroke: var(--selection); stroke-width: 5; }
     .tree-node text { fill: var(--ink); font-size: 12px; font-weight: 750; text-anchor: middle; paint-order: stroke; stroke: var(--background); stroke-width: 3px; cursor: text; user-select: none; }
@@ -165,8 +167,6 @@ export class OrganizerApp extends LitElement {
       .topbar { top: .65rem; left: .65rem; right: .65rem; }
       .switcher { top: 4.15rem; }
       .brand-location { gap: .4rem; }
-      .app-logo { width: 60px; flex-basis: 60px; }
-      .app-logo img { height: 26px; }
       .crumbs { padding-inline: .55rem; }
       .left-actions { left: .65rem; bottom: .65rem; }
       .shortcut-hints { right: .65rem; bottom: .65rem; }
