@@ -55,6 +55,7 @@ export class OrganizerApp extends LitElement {
   private resizeObserver?: ResizeObserver;
   private treeCycles = new Map<string, number>();
   private toastTimer?: number;
+  private pendingMapRestore?: { workspace: OrganizerWorkspaceDocument; tutorialOpen: boolean; path: OrganizerNode[]; selectedId: string };
 
   static styles = css`
     :host { --ink: #171a17; --selection: var(--ink); --background: #e8e7de; --file-background: #f4f3ec; --panel: rgba(250,249,244,.88); --panel-border: rgba(23,26,23,.13); --shadow: rgba(23,26,23,.12); --muted: #686a63; --cell-gap: #faf9f4; --edge-overlay-hover: rgba(255,255,255,.18); --row-hover: rgba(255,255,255,.58); --row-selected: #fff; --editor: rgba(255,255,255,.96); --dialog: #faf9f4; --kbd: #fff; display: block; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; color: var(--ink); background: var(--background); color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -88,14 +89,15 @@ export class OrganizerApp extends LitElement {
     .icon-button svg, .context-toolbar svg, .sidebar-toggle svg, .back-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
     .switcher { position: absolute; z-index: 10; top: 1rem; left: 50%; transform: translateX(-50%); }
     .left-actions { --left-action-gap: .45rem; position: absolute; z-index: 12; left: 1rem; bottom: 1rem; display: flex; flex-direction: column; align-items: flex-start; gap: var(--left-action-gap); }
-    .sidebar-toggle { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); cursor: pointer; }
+    .sidebar-toggle { display: inline-flex; align-items: center; gap: .55rem; min-height: 2.25rem; padding: 0 .75rem 0 .55rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); cursor: pointer; }
+    .sidebar-toggle-label { color: var(--muted); font-size: .72rem; font-weight: 700; }
     .quick-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--left-action-gap); }
     .quick-action-button { display: inline-flex; align-items: center; gap: .55rem; min-height: 2rem; padding: .42rem .7rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .72rem; font-weight: 700; cursor: pointer; }
     .quick-action-button kbd { color: var(--ink); }
     .quick-action-button:hover { background: var(--row-hover); }
     .back-button { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); pointer-events: auto; cursor: pointer; }
     .map-sidebar { display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
-    .map-sidebar h2 { margin: 0; padding: 1rem 1rem .55rem; font-size: .82rem; }
+    .map-sidebar h2 { margin: 0; padding: .85rem 1rem; border-bottom: 1px solid var(--panel-border); background: color-mix(in srgb, #88afe0 18%, transparent); color: var(--ink); font-size: .72rem; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
     .map-list { min-height: 0; overflow-y: auto; padding: .2rem .55rem .65rem; }
     .map-row { display: flex; align-items: center; width: 100%; min-height: 42px; padding: .35rem .55rem; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; }
     .map-row:hover { background: var(--row-hover); }
@@ -103,9 +105,9 @@ export class OrganizerApp extends LitElement {
     .map-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; font-weight: 720; }
     .map-name-editor { display: flex; align-items: center; gap: .35rem; width: 100%; }
     .map-name-input { min-width: 0; min-height: 32px; flex: 1; padding: 0 .5rem; border: 1px solid var(--panel-border); border-radius: 7px; background: var(--editor); color: var(--ink); outline: 0; font-weight: 700; }
-    .map-name-confirm { display: grid; place-items: center; width: 2rem; height: 2rem; flex: 0 0 2rem; padding: 0; border: 1px solid var(--panel-border); border-radius: 7px; background: var(--editor); color: var(--ink); cursor: pointer; }
-    .map-name-confirm:hover { background: var(--row-hover); }
-    .map-name-confirm svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+    .map-name-confirm, .map-name-cancel { display: grid; place-items: center; width: 2rem; height: 2rem; flex: 0 0 2rem; padding: 0; border: 1px solid var(--panel-border); border-radius: 7px; background: var(--editor); color: var(--ink); cursor: pointer; }
+    .map-name-confirm:hover, .map-name-cancel:hover { background: var(--row-hover); }
+    .map-name-confirm svg, .map-name-cancel svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
     .context-toolbar { position: fixed; z-index: 40; display: flex; gap: .2rem; padding: .3rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--ink); box-shadow: 0 14px 40px var(--shadow); backdrop-filter: blur(18px); }
     .context-toolbar button { display: grid; place-items: center; width: 2.35rem; height: 2.35rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
     .context-toolbar button:hover { background: var(--row-hover); }
@@ -300,6 +302,7 @@ export class OrganizerApp extends LitElement {
   private createMap(): void {
     if (this.newMapNamingId) { this.focusPendingMapName(); return; }
     if (this.draft) this.cancelDraft();
+    this.pendingMapRestore = { workspace: this.workspace, tutorialOpen: this.tutorialOpen, path: this.path, selectedId: this.selectedId };
     this.tutorialOpen = false;
     const id = newNodeId(collectNodeIds(this.workspace.maps));
     const map: OrganizerNode = { id, name: this.t("untitledMap"), children: [] };
@@ -336,7 +339,7 @@ export class OrganizerApp extends LitElement {
   private commitMapRename(input: HTMLInputElement, id: string): void {
     if (this.editingMapId !== id) return;
     const map = this.workspace.maps.find((candidate) => candidate.id === id);
-    if (!map) { this.editingMapId = null; this.newMapNamingId = null; return; }
+    if (!map) { this.editingMapId = null; this.newMapNamingId = null; this.pendingMapRestore = undefined; return; }
     const name = normalizeElementText(input.value, "");
     if (!name) { this.setStatus(this.t("mapNameRequired")); input.focus(); return; }
     const isNewMap = this.newMapNamingId === id;
@@ -344,6 +347,7 @@ export class OrganizerApp extends LitElement {
     this.editingMapId = null;
     if (isNewMap) {
       this.newMapNamingId = null;
+      this.pendingMapRestore = undefined;
       this.sidebarOpen = false;
       this.path = [map];
       this.selectedId = map.id;
@@ -357,6 +361,23 @@ export class OrganizerApp extends LitElement {
     if (input) this.commitMapRename(input, id);
   }
 
+  private cancelNewMap(id: string): void {
+    if (this.newMapNamingId !== id || !this.pendingMapRestore) return;
+    const restore = this.pendingMapRestore;
+    this.workspace = restore.workspace;
+    this.tutorialOpen = restore.tutorialOpen;
+    this.path = restore.path;
+    this.selectedId = restore.selectedId;
+    this.editingMapId = null;
+    this.newMapNamingId = null;
+    this.pendingMapRestore = undefined;
+    this.sidebarOpen = false;
+    this.treeCycles.clear();
+    this.persistMaps();
+    this.setStatus(this.t("newMapCancelled"));
+    this.focusNode(this.selectedId);
+  }
+
   private mapRenameKey(event: KeyboardEvent, id: string): void {
     event.stopPropagation();
     if (event.key === "Enter") {
@@ -366,7 +387,7 @@ export class OrganizerApp extends LitElement {
     }
     if (event.key === "Escape") {
       event.preventDefault();
-      if (this.newMapNamingId === id) this.focusPendingMapName();
+      if (this.newMapNamingId === id) this.cancelNewMap(id);
       else this.editingMapId = null;
     }
   }
@@ -775,7 +796,7 @@ export class OrganizerApp extends LitElement {
       </div>`)} </div>`;
   }
 
-  private renderIcon(name: "menu" | "back" | "sun" | "moon" | "copy" | "trash" | "edit" | "duplicate" | "download" | "check" | "plus") {
+  private renderIcon(name: "menu" | "back" | "sun" | "moon" | "copy" | "trash" | "edit" | "duplicate" | "download" | "check" | "close" | "plus") {
     if (name === "menu") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>`;
     if (name === "back") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6M9 12h10"></path></svg>`;
     if (name === "sun") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41"></path></svg>`;
@@ -786,6 +807,7 @@ export class OrganizerApp extends LitElement {
     if (name === "duplicate") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2M13.5 11v5M11 13.5h5"></path></svg>`;
     if (name === "download") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"></path></svg>`;
     if (name === "check") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>`;
+    if (name === "close") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>`;
     return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>`;
   }
 
@@ -798,6 +820,7 @@ export class OrganizerApp extends LitElement {
           ${this.editingMapId === map.id ? html`<div class="map-name-editor" @click=${(event: Event) => event.stopPropagation()} @contextmenu=${(event: Event) => event.stopPropagation()}>
             <input data-map-edit class="map-name-input" maxlength=${ELEMENT_TEXT_LIMIT} .value=${map.name} aria-label=${this.t("mapText")} @keydown=${(event: KeyboardEvent) => this.mapRenameKey(event, map.id)} @blur=${(event: FocusEvent) => { if (this.newMapNamingId !== map.id) this.commitMapRename(event.currentTarget as HTMLInputElement, map.id); }} />
             <button class="map-name-confirm" aria-label=${this.t("confirmMapName")} title=${this.t("confirmMapName")} @keydown=${(event: KeyboardEvent) => event.stopPropagation()} @click=${(event: MouseEvent) => { event.stopPropagation(); this.confirmMapName(map.id); }}>${this.renderIcon("check")}</button>
+            ${this.newMapNamingId === map.id ? html`<button class="map-name-cancel" aria-label=${this.t("cancelNewMap")} title=${this.t("cancelNewMap")} @keydown=${(event: KeyboardEvent) => event.stopPropagation()} @click=${(event: MouseEvent) => { event.stopPropagation(); this.cancelNewMap(map.id); }}>${this.renderIcon("close")}</button>` : nothing}
           </div>` : html`<span class="map-row-label" title=${map.name}>${map.name}</span>`}
         </div>`)}
         <div class="map-row ${this.tutorialOpen ? "active" : ""}" role="button" tabindex="0" aria-current=${this.tutorialOpen ? "true" : nothing} @click=${this.openTutorial} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.openTutorial(); } }}>
@@ -862,7 +885,7 @@ export class OrganizerApp extends LitElement {
       <div class="switcher"><view-switcher .view=${this.view} .language=${this.language} @view-change=${(event: CustomEvent<OrganizerView>) => this.chooseView(event.detail)}></view-switcher></div>
       <div class="left-actions">
         ${this.renderSidebar()}
-        <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { if (this.newMapNamingId) { this.focusPendingMapName(); return; } this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
+        <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { if (this.newMapNamingId) { this.focusPendingMapName(); return; } this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}<span class="sidebar-toggle-label">${this.t("mapList")}</span></button>
         <div class="quick-actions">
           <button class="quick-action-button new-map-button" aria-label=${this.t("createMap")} title=${this.t("createMap")} @click=${this.createMap}><kbd>N</kbd><span>${this.t("newMap")}</span></button>
           <button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}><kbd>A</kbd><span>${this.t("addNode")}</span></button>
