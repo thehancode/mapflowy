@@ -3,7 +3,7 @@ import type { OrganizerNode, TreeEntry, Point, LayoutEntry, RadialTreeLayout } f
 export const ELEMENT_TEXT_LIMIT = 4096;
 export const GRAPH_ROOT_RADIUS = 24;
 export const MAX_TREE_LEVELS = 12;
-export const NODE_PALETTE = ["#f38b70", "#efc65d", "#71c1b2", "#88afe0", "#b99bdf", "#df9eb6", "#9fc477", "#e5a665"] as const;
+export const NODE_PALETTE = ["#f38b70", "#efc65d", "#71c1b2", "#88afe0", "#b99bdf", "#df9eb6", "#c5d36c", "#e5a665"] as const;
 
 function hashString(value: string): number {
   let hash = 2166136261;

@@ -65,6 +65,7 @@ export class OrganizerApp extends LitElement {
     .topbar { position: absolute; z-index: 10; top: 1rem; left: 1rem; right: 1rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; pointer-events: none; }
     .brand-location { display: flex; flex: 1; align-items: flex-start; gap: .75rem; min-width: 0; max-width: calc(50% - 220px); }
     .app-logo { display: flex; align-items: center; width: 80px; min-height: 44px; flex: 0 0 80px; pointer-events: none; user-select: none; }
+    .app-logo.voronoi { border: 1px solid var(--panel-border); border-radius: 14px; background: color-mix(in srgb, var(--panel) 72%, transparent); box-shadow: 0 5px 16px var(--shadow); backdrop-filter: blur(10px); }
     .app-logo img { display: block; width: 100%; height: 34px; user-select: none; -webkit-user-drag: none; }
     .location-controls { position: relative; display: flex; flex: 1; flex-direction: column; align-items: flex-start; min-width: 0; gap: .65rem; pointer-events: none; }
     .crumbs, .top-actions { pointer-events: auto; border: 1px solid var(--panel-border); background: var(--panel); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); }
@@ -936,7 +937,7 @@ export class OrganizerApp extends LitElement {
       <div class="stage ${this.view === "file" ? "file" : ""}" @mousedown=${this.onNodeMouseDown} @auxclick=${this.onNodeAuxClick}>${this.view === "voronoi" ? this.renderVoronoi() : this.view === "tree" ? this.renderTree() : this.renderFileTree()}</div>
       <div class="topbar">
         <div class="brand-location">
-        <span class="app-logo" aria-hidden="true"><img src="/icon.svg" width="80" height="34" alt="" draggable="false" /></span>
+        <span class="app-logo ${this.view === "voronoi" ? "voronoi" : ""}" aria-hidden="true"><img src="/icon.svg" width="80" height="34" alt="" draggable="false" /></span>
         <div class="location-controls">
           <div class="crumbs crumb-measure" aria-hidden="true">${this.path.map((node, index) => html`${index ? html`<span class="separator">/</span>` : nothing}<span class="crumb" aria-current=${index === this.path.length - 1 ? "location" : nothing}>${node.name}</span>`)}</div>
           <nav class="crumbs" aria-label=${this.t("currentLocation")} title=${this.path.map((node) => node.name).join(" / ")}>${this.path.map((node, index) => {

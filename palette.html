@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mapflowy color palette</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #171a17;
+      --muted: #686a63;
+      --background: #e8e7de;
+      --panel: #faf9f4;
+      --border: rgba(23, 26, 23, .13);
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--ink);
+    }
+
+    main {
+      width: min(1040px, calc(100% - 2rem));
+      margin: 0 auto;
+      padding: 4rem 0 5rem;
+    }
+
+    header { max-width: 650px; margin-bottom: 3rem; }
+    h1 { margin: 0 0 .65rem; font-size: clamp(2rem, 6vw, 4rem); line-height: .95; letter-spacing: -.05em; }
+    h2 { margin: 0 0 1rem; font-size: 1.05rem; letter-spacing: .01em; }
+    p { margin: 0; color: var(--muted); line-height: 1.6; }
+    section + section { margin-top: 3rem; }
+
+    .palette {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: .75rem;
+    }
+
+    .swatch {
+      min-height: 150px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 1rem;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--color);
+      color: var(--label, #171a17);
+      box-shadow: 0 8px 24px rgba(23, 26, 23, .08);
+      cursor: pointer;
+      text-align: left;
+      transition: transform .14s ease, box-shadow .14s ease;
+    }
+
+    .swatch:hover,
+    .swatch:focus-visible {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(23, 26, 23, .14);
+      outline: none;
+    }
+
+    .swatch strong { font-size: .92rem; }
+    .swatch code { margin-top: .2rem; font: 700 .78rem ui-monospace, SFMono-Regular, Consolas, monospace; opacity: .72; }
+
+    .themes {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+
+    .theme-card {
+      padding: 1rem;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--panel);
+    }
+
+    .theme-card.dark { --border: rgba(242, 240, 232, .16); background: #151612; color: #f2f0e8; }
+    .theme-card h3 { margin: 0 0 .8rem; font-size: .9rem; }
+    .theme-card .palette { grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+    .theme-card .swatch { min-height: 92px; padding: .7rem; border-radius: 12px; box-shadow: none; }
+    .theme-card .swatch strong { font-size: .75rem; }
+    .theme-card .swatch code { font-size: .68rem; }
+
+    .suggested {
+      padding: 1.25rem;
+      border: 1px dashed rgba(23, 26, 23, .28);
+      border-radius: 22px;
+      background: rgba(250, 249, 244, .58);
+    }
+
+    .green-options {
+      padding: 1.25rem;
+      border: 1px solid rgba(63, 126, 85, .24);
+      border-radius: 22px;
+      background: rgba(223, 235, 218, .58);
+    }
+
+    .green-groups { display: grid; gap: 1.5rem; }
+    .green-group h3 { margin: 0 0 .75rem; font-size: .85rem; color: var(--muted); }
+
+    .suggested-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; margin-bottom: 1rem; }
+    .suggested-heading h2, .suggested-heading p { margin: 0; }
+    #status { min-height: 1.5rem; margin-top: 1rem; font-size: .8rem; }
+
+    @media (max-width: 600px) {
+      main { padding-top: 2.5rem; }
+      .theme-card .palette { grid-template-columns: repeat(2, 1fr); }
+      .suggested-heading { display: block; }
+      .suggested-heading p { margin-top: .35rem; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Mapflowy colors</h1>
+      <p>The current application palette and a small set of possible additions. Click any swatch to copy its hex value.</p>
+    </header>
+
+    <section aria-labelledby="node-colors">
+      <h2 id="node-colors">Current node palette</h2>
+      <div class="palette">
+        <button class="swatch" style="--color:#f38b70"><strong>Coral</strong><code>#F38B70</code></button>
+        <button class="swatch" style="--color:#efc65d"><strong>Sunflower</strong><code>#EFC65D</code></button>
+        <button class="swatch" style="--color:#71c1b2"><strong>Seafoam</strong><code>#71C1B2</code></button>
+        <button class="swatch" style="--color:#88afe0"><strong>Sky</strong><code>#88AFE0</code></button>
+        <button class="swatch" style="--color:#b99bdf"><strong>Lavender</strong><code>#B99BDF</code></button>
+        <button class="swatch" style="--color:#df9eb6"><strong>Blush</strong><code>#DF9EB6</code></button>
+        <button class="swatch" style="--color:#c5d36c"><strong>Citron</strong><code>#C5D36C</code></button>
+        <button class="swatch" style="--color:#e5a665"><strong>Apricot</strong><code>#E5A665</code></button>
+      </div>
+    </section>
+
+    <section aria-labelledby="interface-colors">
+      <h2 id="interface-colors">Interface colors</h2>
+      <div class="themes">
+        <article class="theme-card">
+          <h3>Light theme</h3>
+          <div class="palette">
+            <button class="swatch" style="--color:#171a17;--label:#f2f0e8"><strong>Ink</strong><code>#171A17</code></button>
+            <button class="swatch" style="--color:#e8e7de"><strong>Background</strong><code>#E8E7DE</code></button>
+            <button class="swatch" style="--color:#f4f3ec"><strong>File surface</strong><code>#F4F3EC</code></button>
+            <button class="swatch" style="--color:#faf9f4"><strong>Panel</strong><code>#FAF9F4</code></button>
+            <button class="swatch" style="--color:#686a63;--label:#fff"><strong>Muted</strong><code>#686A63</code></button>
+            <button class="swatch" style="--color:#929292"><strong>Marked</strong><code>#929292</code></button>
+          </div>
+        </article>
+
+        <article class="theme-card dark">
+          <h3>Dark theme</h3>
+          <div class="palette">
+            <button class="swatch" style="--color:#f2f0e8"><strong>Ink</strong><code>#F2F0E8</code></button>
+            <button class="swatch" style="--color:#151612;--label:#f2f0e8"><strong>Background</strong><code>#151612</code></button>
+            <button class="swatch" style="--color:#1b1c18;--label:#f2f0e8"><strong>File surface</strong><code>#1B1C18</code></button>
+            <button class="swatch" style="--color:#23241f;--label:#f2f0e8"><strong>Panel</strong><code>#23241F</code></button>
+            <button class="swatch" style="--color:#aaa99f"><strong>Muted</strong><code>#AAA99F</code></button>
+            <button class="swatch" style="--color:#646464;--label:#fff"><strong>Marked</strong><code>#646464</code></button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="green-options" aria-labelledby="green-alternatives">
+      <div class="suggested-heading">
+        <h2 id="green-alternatives">Other green directions</h2>
+        <p>Pastel greens matched to the saturation of the current node palette.</p>
+      </div>
+      <div class="green-groups">
+        <div class="green-group">
+          <h3>Yellow-lime greens</h3>
+          <div class="palette">
+            <button class="swatch" style="--color:#b8cc63"><strong>Lime leaf</strong><code>#B8CC63</code></button>
+            <button class="swatch" style="--color:#cbd873"><strong>Lemon grass</strong><code>#CBD873</code></button>
+            <button class="swatch" style="--color:#afc85f"><strong>Spring lime</strong><code>#AFC85F</code></button>
+            <button class="swatch" style="--color:#c1d47a"><strong>Soft chartreuse</strong><code>#C1D47A</code></button>
+          </div>
+        </div>
+        <div class="green-group">
+          <h3>Blue-turquoise greens</h3>
+          <div class="palette">
+            <button class="swatch" style="--color:#65bbae"><strong>Blue mint</strong><code>#65BBAE</code></button>
+            <button class="swatch" style="--color:#62b8b5"><strong>Lagoon</strong><code>#62B8B5</code></button>
+            <button class="swatch" style="--color:#6bbac2"><strong>Aqua teal</strong><code>#6BBAC2</code></button>
+            <button class="swatch" style="--color:#70b5c7"><strong>Blue turquoise</strong><code>#70B5C7</code></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="suggested" aria-labelledby="suggested-colors">
+      <div class="suggested-heading">
+        <h2 id="suggested-colors">Suggested new colors</h2>
+        <p>More contrast and range while keeping the app’s soft character.</p>
+      </div>
+      <div class="palette">
+        <button class="swatch" style="--color:#d96c54;--label:#fff"><strong>Ember</strong><code>#D96C54</code></button>
+        <button class="swatch" style="--color:#d9a72e"><strong>Marigold</strong><code>#D9A72E</code></button>
+        <button class="swatch" style="--color:#3fa695;--label:#fff"><strong>Jade</strong><code>#3FA695</code></button>
+        <button class="swatch" style="--color:#4e91c9;--label:#fff"><strong>Ocean</strong><code>#4E91C9</code></button>
+        <button class="swatch" style="--color:#7d6ac2;--label:#fff"><strong>Iris</strong><code>#7D6AC2</code></button>
+        <button class="swatch" style="--color:#c86f94;--label:#fff"><strong>Berry</strong><code>#C86F94</code></button>
+        <button class="swatch" style="--color:#6f9f55;--label:#fff"><strong>Fern</strong><code>#6F9F55</code></button>
+        <button class="swatch" style="--color:#ad7653;--label:#fff"><strong>Clay</strong><code>#AD7653</code></button>
+      </div>
+    </section>
+
+    <p id="status" role="status" aria-live="polite"></p>
+  </main>
+
+  <script>
+    const status = document.querySelector("#status");
+    document.querySelectorAll(".swatch").forEach((swatch) => {
+      swatch.addEventListener("click", async () => {
+        const value = swatch.querySelector("code").textContent;
+        try {
+          await navigator.clipboard.writeText(value);
+          status.textContent = `${value} copied to the clipboard.`;
+        } catch {
+          status.textContent = `Copy unavailable. Color value: ${value}`;
+        }
+      });
+    });
+  </script>
+</body>
+</html>
