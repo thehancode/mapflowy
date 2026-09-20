@@ -12,8 +12,9 @@ export class ViewSwitcher extends LitElement {
   static styles = css`
     :host { display: block; }
     div { display: flex; gap: .25rem; padding: .28rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); box-shadow: 0 12px 36px var(--shadow); backdrop-filter: blur(16px); }
-    button { min-height: 2.35rem; padding: 0 .9rem; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: 700 .76rem/1 system-ui, sans-serif; cursor: pointer; }
+    button { display: inline-flex; align-items: center; gap: .42rem; min-height: 2.35rem; padding: 0 .9rem; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: 700 .76rem/1 system-ui, sans-serif; cursor: pointer; }
     button[aria-pressed="true"] { background: var(--ink); color: var(--background); }
+    .view-key { padding: .15rem .38rem; border: 1px solid var(--panel-border); border-bottom-width: 2px; border-radius: 5px; background: var(--kbd); color: var(--ink); font: 700 .72rem system-ui; }
     button:focus-visible { outline: 2px solid #eb4d28; outline-offset: 2px; }
     @media (max-width: 520px) { button { padding: 0 .66rem; font-size: .7rem; } }
   `;
@@ -25,9 +26,9 @@ export class ViewSwitcher extends LitElement {
 
   render() {
     return html`<div role="group" aria-label=${translate(this.language, "displayMode")}>
-      <button aria-pressed=${this.view === "voronoi"} @click=${() => this.choose("voronoi")}>1. ${translate(this.language, "voronoiView")}</button>
-      <button aria-pressed=${this.view === "tree"} @click=${() => this.choose("tree")}>2. ${translate(this.language, "graphView")}</button>
-      <button aria-pressed=${this.view === "file"} @click=${() => this.choose("file")}>3. ${translate(this.language, "treeView")}</button>
+      <button aria-pressed=${this.view === "voronoi"} @click=${() => this.choose("voronoi")}><span class="view-key" aria-hidden="true">1</span>${translate(this.language, "voronoiView")}</button>
+      <button aria-pressed=${this.view === "tree"} @click=${() => this.choose("tree")}><span class="view-key" aria-hidden="true">2</span>${translate(this.language, "graphView")}</button>
+      <button aria-pressed=${this.view === "file"} @click=${() => this.choose("file")}><span class="view-key" aria-hidden="true">3</span>${translate(this.language, "treeView")}</button>
     </div>`;
   }
 }
