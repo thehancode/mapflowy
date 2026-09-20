@@ -83,8 +83,8 @@ export function cloneTreeWithFreshIds(root: OrganizerNode, existingIds: Iterable
   return clone(root);
 }
 
-export function duplicateTree(root: OrganizerNode, workspaceTrees: OrganizerNode[]): OrganizerNode {
-  const duplicate = cloneTreeWithFreshIds(root, collectNodeIds(workspaceTrees));
+export function duplicateMap(root: OrganizerNode, workspaceMaps: OrganizerNode[]): OrganizerNode {
+  const duplicate = cloneTreeWithFreshIds(root, collectNodeIds(workspaceMaps));
   duplicate.name = normalizeElementText(`${root.name} copy`);
   return duplicate;
 }

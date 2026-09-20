@@ -1,9 +1,9 @@
 import { LitElement, css, html, nothing, svg, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import "./view-switcher";
-import type { OrganizerLanguage, OrganizerNode, OrganizerWorkspaceDocument, Point, LayoutEntry, OrganizerTheme, TranslationKey } from "../../lib/organizer";
+import type { OrganizerLanguage, OrganizerNode, OrganizerWorkspaceDocument, Point, LayoutEntry, OrganizerTheme, TranslationKey, TutorialDocument } from "../../lib/organizer";
 import {
-  circleLayout, collectNodeIds, createRepository, createTutorialTree, createUserConfigRepository, duplicateTree, ELEMENT_TEXT_LIMIT, findEntry, flattenTree, fitLabel, GRAPH_ROOT_RADIUS, newNodeId, normalizeElementText,
+  circleLayout, collectNodeIds, createRepository, createTutorialDocument, createTutorialRepository, createUserConfigRepository, duplicateMap, ELEMENT_TEXT_LIMIT, findEntry, flattenTree, fitLabel, GRAPH_ROOT_RADIUS, localizeTutorialDocument, newNodeId, normalizeElementText,
   polygonArea, polygonBottomBand, polygonCentroid, radialArcPath, radialLinkPath, radialTreeLayout, roundedPolygonPath, visibleItems,
   translate, viewportEdgeBand, viewportEdgeOverlayPath, viewportEdges, viewportEdgeSpan, voronoiPathForSelection, voronoiPolygons,
 } from "../../lib/organizer";
@@ -11,7 +11,7 @@ import type { OrganizerView } from "./view-switcher";
 
 const palette = ["#f38b70", "#efc65d", "#71c1b2", "#88afe0", "#b99bdf", "#df9eb6", "#9fc477", "#e5a665"];
 const initialRoot: OrganizerNode = { id: "node-1", name: "Projects", children: [] };
-type ContextMenuState = { kind: "element" | "tree"; id: string; x: number; y: number };
+type ContextMenuState = { kind: "element" | "map"; id: string; x: number; y: number };
 const directions: Record<string, Point> = {
   ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 },
   ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 },
@@ -27,11 +27,12 @@ function hashString(value: string): number {
 export class OrganizerApp extends LitElement {
   private readonly configRepository = createUserConfigRepository();
   private readonly initialConfig = this.configRepository.load();
+  private readonly tutorialRepository = createTutorialRepository();
   @property({ reflect: true }) theme: OrganizerTheme = this.initialConfig.theme;
   @property({ reflect: true }) language: OrganizerLanguage = this.initialConfig.language;
-  @state() private workspace: OrganizerWorkspaceDocument = { version: 2, activeTreeId: initialRoot.id, trees: [initialRoot] };
+  @state() private workspace: OrganizerWorkspaceDocument = { version: 3, activeMapId: initialRoot.id, maps: [initialRoot] };
   @state() private tutorialOpen = false;
-  @state() private tutorialRoot = createTutorialTree(this.language);
+  @state() private tutorialDocument: TutorialDocument = createTutorialDocument(this.language);
   @state() private path: OrganizerNode[] = [this.root];
   @state() private selectedId = this.root.id;
   @state() private view: OrganizerView = "tree";
@@ -40,7 +41,7 @@ export class OrganizerApp extends LitElement {
   @state() private height = 720;
   @state() private draft: { id: string; parentId: string; restoreId: string; mode: "create" | "edit" } | null = null;
   @state() private sidebarOpen = false;
-  @state() private editingTreeId: string | null = null;
+  @state() private editingMapId: string | null = null;
   @state() private contextMenu: ContextMenuState | null = null;
   @state() private toast = "";
   @state() private storageSaveFailed = false;
@@ -77,17 +78,17 @@ export class OrganizerApp extends LitElement {
     .sidebar-toggle { left: 1rem; }
     .quick-add-button { left: 4.25rem; }
     .back-button { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); pointer-events: auto; cursor: pointer; }
-    .tree-sidebar { position: absolute; z-index: 11; left: 1rem; bottom: 4.5rem; display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
-    .tree-sidebar h2 { margin: 0; padding: 1rem 1rem .55rem; font-size: .82rem; }
-    .tree-list { min-height: 0; overflow-y: auto; padding: .2rem .55rem .65rem; }
-    .tree-row { display: flex; align-items: center; width: 100%; min-height: 42px; padding: .35rem .55rem; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; }
-    .tree-row:hover { background: var(--row-hover); }
-    .tree-row.active { border-color: var(--panel-border); background: var(--row-selected); }
-    .tree-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; font-weight: 720; }
-    .tree-name-input { width: 100%; min-height: 32px; padding: 0 .5rem; border: 1px solid var(--panel-border); border-radius: 7px; background: var(--editor); color: var(--ink); outline: 0; font-weight: 700; }
-    .tree-sidebar-footer { display: grid; gap: .45rem; padding: .65rem; border-top: 1px solid var(--panel-border); }
-    .add-tree, .tutorial-tree { display: grid; place-items: center; width: 100%; min-height: 40px; border: 1px solid var(--panel-border); border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; }
-    .tutorial-tree.active, .tutorial-tree:hover, .add-tree:hover { background: var(--row-hover); }
+    .map-sidebar { position: absolute; z-index: 11; left: 1rem; bottom: 4.5rem; display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
+    .map-sidebar h2 { margin: 0; padding: 1rem 1rem .55rem; font-size: .82rem; }
+    .map-list { min-height: 0; overflow-y: auto; padding: .2rem .55rem .65rem; }
+    .map-row { display: flex; align-items: center; width: 100%; min-height: 42px; padding: .35rem .55rem; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; }
+    .map-row:hover { background: var(--row-hover); }
+    .map-row.active { border-color: var(--panel-border); background: var(--row-selected); }
+    .map-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; font-weight: 720; }
+    .map-name-input { width: 100%; min-height: 32px; padding: 0 .5rem; border: 1px solid var(--panel-border); border-radius: 7px; background: var(--editor); color: var(--ink); outline: 0; font-weight: 700; }
+    .map-sidebar-footer { display: grid; gap: .45rem; padding: .65rem; border-top: 1px solid var(--panel-border); }
+    .add-map, .tutorial-map { display: grid; place-items: center; width: 100%; min-height: 40px; border: 1px solid var(--panel-border); border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; }
+    .tutorial-map.active, .tutorial-map:hover, .add-map:hover { background: var(--row-hover); }
     .context-toolbar { position: fixed; z-index: 40; display: flex; gap: .2rem; padding: .3rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--ink); box-shadow: 0 14px 40px var(--shadow); backdrop-filter: blur(18px); }
     .context-toolbar button { display: grid; place-items: center; width: 2.35rem; height: 2.35rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
     .context-toolbar button:hover { background: var(--row-hover); }
@@ -140,7 +141,7 @@ export class OrganizerApp extends LitElement {
       .sidebar-toggle { left: .65rem; bottom: .65rem; }
       .quick-add-button { left: 3.9rem; bottom: .65rem; }
       .storage-note { right: .65rem; bottom: .65rem; }
-      .tree-sidebar { left: .65rem; bottom: 4rem; width: min(310px, calc(100vw - 1.3rem)); }
+      .map-sidebar { left: .65rem; bottom: 4rem; width: min(310px, calc(100vw - 1.3rem)); }
       .file-tree { padding-top: 8.2rem; }
       .file-row { margin-left: calc(var(--depth) * 18px); }
       .tree-node text { font-size: 10px; }
@@ -176,8 +177,8 @@ export class OrganizerApp extends LitElement {
       input?.focus();
       if (this.draft?.mode === "edit") input?.select();
     });
-    if (changed.has("editingTreeId") && this.editingTreeId) requestAnimationFrame(() => {
-      const input = this.renderRoot.querySelector<HTMLInputElement>("[data-tree-edit]");
+    if (changed.has("editingMapId") && this.editingMapId) requestAnimationFrame(() => {
+      const input = this.renderRoot.querySelector<HTMLInputElement>("[data-map-edit]");
       input?.focus(); input?.select();
     });
     if (changed.has("contextMenu") && this.contextMenu) requestAnimationFrame(() => {
@@ -185,7 +186,7 @@ export class OrganizerApp extends LitElement {
     });
   }
 
-  private get root(): OrganizerNode { return this.tutorialOpen ? this.tutorialRoot : this.workspace.trees.find(({ id }) => id === this.workspace.activeTreeId) ?? this.workspace.trees[0]; }
+  private get root(): OrganizerNode { return this.tutorialOpen ? this.tutorialDocument.root : this.workspace.maps.find(({ id }) => id === this.workspace.activeMapId) ?? this.workspace.maps[0]; }
   private get current(): OrganizerNode { return this.path[this.path.length - 1]; }
   private t(key: TranslationKey, values: Record<string, string | number> = {}): string { return translate(this.language, key, values); }
   private setStatus(message: string): void { this.status = message; }
@@ -205,10 +206,11 @@ export class OrganizerApp extends LitElement {
   private setLanguage(language: OrganizerLanguage): void {
     if (language === this.language) return;
     this.language = language;
+    this.tutorialDocument = localizeTutorialDocument(this.tutorialDocument, language);
     if (this.tutorialOpen) {
-      this.tutorialRoot = createTutorialTree(language);
-      this.path = findEntry(this.tutorialRoot, this.selectedId)?.path ?? [this.tutorialRoot];
+      this.path = findEntry(this.tutorialDocument.root, this.selectedId)?.path ?? [this.tutorialDocument.root];
     }
+    this.tutorialRepository.save(this.tutorialDocument);
     this.toast = "";
     this.configRepository.save({ version: 2, theme: this.theme, language });
     this.setStatus(translate(language, language === "es" ? "languageSpanishEnabled" : "languageEnglishEnabled"));
@@ -216,13 +218,14 @@ export class OrganizerApp extends LitElement {
 
   private async load(): Promise<void> {
     this.workspace = await this.repository.load();
+    this.tutorialDocument = this.tutorialRepository.load(this.language);
     this.tutorialOpen = false;
     this.path = [this.root]; this.selectedId = this.root.id; this.treeCycles.clear();
     this.setStatus(this.t("loaded", { name: this.root.name }));
   }
 
   private persist(): void {
-    const saved = this.repository.save(this.workspace);
+    const saved = this.tutorialOpen ? this.tutorialRepository.save(this.tutorialDocument) : this.repository.save(this.workspace);
     this.storageSaveFailed = !saved;
     this.requestUpdate();
   }
@@ -232,67 +235,66 @@ export class OrganizerApp extends LitElement {
     this.setStatus(message);
   }
 
-  private switchTree(id: string): void {
+  private switchMap(id: string): void {
     if (this.tutorialOpen) this.tutorialOpen = false;
-    if (id === this.workspace.activeTreeId) { this.resetToRoot(this.t("opened", { name: this.root.name })); return; }
+    if (id === this.workspace.activeMapId) { this.resetToRoot(this.t("opened", { name: this.root.name })); return; }
     if (this.draft) this.cancelDraft();
-    const tree = this.workspace.trees.find((candidate) => candidate.id === id);
-    if (!tree) return;
-    this.workspace = { ...this.workspace, activeTreeId: id };
-    this.editingTreeId = null;
-    this.resetToRoot(this.t("opened", { name: tree.name }));
+    const map = this.workspace.maps.find((candidate) => candidate.id === id);
+    if (!map) return;
+    this.workspace = { ...this.workspace, activeMapId: id };
+    this.editingMapId = null;
+    this.resetToRoot(this.t("opened", { name: map.name }));
     this.persist();
   }
 
-  private createTree(): void {
+  private createMap(): void {
     if (this.draft) this.cancelDraft();
     this.tutorialOpen = false;
-    const id = newNodeId(collectNodeIds(this.workspace.trees));
-    const tree: OrganizerNode = { id, name: this.t("untitledTree"), children: [] };
-    this.workspace = { version: 2, activeTreeId: id, trees: [...this.workspace.trees, tree] };
-    this.sidebarOpen = true; this.editingTreeId = id;
-    this.resetToRoot(this.t("newTreeReady"));
+    const id = newNodeId(collectNodeIds(this.workspace.maps));
+    const map: OrganizerNode = { id, name: this.t("untitledMap"), children: [] };
+    this.workspace = { version: 3, activeMapId: id, maps: [...this.workspace.maps, map] };
+    this.sidebarOpen = true; this.editingMapId = id;
+    this.resetToRoot(this.t("newMapReady"));
     this.persist();
   }
 
   private openTutorial(): void {
     if (this.draft) this.cancelDraft();
-    this.tutorialRoot = createTutorialTree(this.language);
     this.tutorialOpen = true;
-    this.editingTreeId = null;
+    this.editingMapId = null;
     this.resetToRoot(this.t("tutorialOpened"));
   }
 
-  private beginTreeRename(id: string): void {
-    this.contextMenu = null; this.sidebarOpen = true; this.editingTreeId = id;
+  private beginMapRename(id: string): void {
+    this.contextMenu = null; this.sidebarOpen = true; this.editingMapId = id;
   }
 
-  private commitTreeRename(input: HTMLInputElement, id: string): void {
-    if (this.editingTreeId !== id) return;
-    const tree = this.workspace.trees.find((candidate) => candidate.id === id);
-    if (!tree) { this.editingTreeId = null; return; }
+  private commitMapRename(input: HTMLInputElement, id: string): void {
+    if (this.editingMapId !== id) return;
+    const map = this.workspace.maps.find((candidate) => candidate.id === id);
+    if (!map) { this.editingMapId = null; return; }
     const name = normalizeElementText(input.value, "");
-    if (name) tree.name = name;
-    this.editingTreeId = null; this.persist(); this.setStatus(this.t("renamed", { name: tree.name }));
+    if (name) map.name = name;
+    this.editingMapId = null; this.persist(); this.setStatus(this.t("renamed", { name: map.name }));
   }
 
-  private treeRenameKey(event: KeyboardEvent, id: string): void {
+  private mapRenameKey(event: KeyboardEvent, id: string): void {
     event.stopPropagation();
-    if (event.key === "Enter") { event.preventDefault(); this.commitTreeRename(event.currentTarget as HTMLInputElement, id); }
-    if (event.key === "Escape") { event.preventDefault(); this.editingTreeId = null; }
+    if (event.key === "Enter") { event.preventDefault(); this.commitMapRename(event.currentTarget as HTMLInputElement, id); }
+    if (event.key === "Escape") { event.preventDefault(); this.editingMapId = null; }
   }
 
-  private duplicateWorkspaceTree(id: string): void {
-    const index = this.workspace.trees.findIndex((tree) => tree.id === id);
+  private duplicateWorkspaceMap(id: string): void {
+    const index = this.workspace.maps.findIndex((map) => map.id === id);
     if (index < 0) return;
-    const duplicate = duplicateTree(this.workspace.trees[index], this.workspace.trees);
-    const trees = [...this.workspace.trees]; trees.splice(index + 1, 0, duplicate);
-    this.workspace = { version: 2, activeTreeId: duplicate.id, trees };
-    this.editingTreeId = null; this.resetToRoot(this.t("created", { name: duplicate.name })); this.persist();
+    const duplicate = duplicateMap(this.workspace.maps[index], this.workspace.maps);
+    const maps = [...this.workspace.maps]; maps.splice(index + 1, 0, duplicate);
+    this.workspace = { version: 3, activeMapId: duplicate.id, maps };
+    this.editingMapId = null; this.resetToRoot(this.t("created", { name: duplicate.name })); this.persist();
   }
 
-  private downloadTree(root: OrganizerNode): void {
-    const blob = new Blob([this.repository.exportJson(root)], { type: "application/json" });
+  private downloadMap(root: OrganizerNode): void {
+    const blob = new Blob([this.repository.exportMapJson(root)], { type: "application/json" });
     const url = URL.createObjectURL(blob), link = document.createElement("a");
     const filename = root.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "organizer";
     link.href = url; link.download = `${filename}.json`; link.click(); URL.revokeObjectURL(url);
@@ -315,7 +317,6 @@ export class OrganizerApp extends LitElement {
   }
 
   private deleteElement(id: string): void {
-    if (this.tutorialOpen) { this.contextMenu = null; this.setStatus(this.t("tutorialReadOnly")); return; }
     const entry = findEntry(this.root, id);
     this.contextMenu = null;
     if (!entry?.parent) { this.setStatus(this.t("removeRoot")); return; }
@@ -346,19 +347,19 @@ export class OrganizerApp extends LitElement {
     this.contextMenu = { kind: "element", id: this.selectedId, ...this.contextPosition(x, y) };
   }
 
-  private treeRowKey(event: KeyboardEvent, id: string): void {
-    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.switchTree(id); return; }
+  private mapRowKey(event: KeyboardEvent, id: string): void {
+    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.switchMap(id); return; }
     if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
     event.preventDefault(); event.stopPropagation();
     const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    this.contextMenu = { kind: "tree", id, ...this.contextPosition(bounds.right, bounds.top + bounds.height / 2) };
+    this.contextMenu = { kind: "map", id, ...this.contextPosition(bounds.right, bounds.top + bounds.height / 2) };
   }
 
   private workspacePointerDown(event: PointerEvent): void {
     const path = event.composedPath();
     const includesClass = (...classNames: string[]) => path.some((target) => target instanceof Element && classNames.some((className) => target.classList.contains(className)));
     if (this.contextMenu && !includesClass("context-toolbar")) this.contextMenu = null;
-    if (this.sidebarOpen && !includesClass("tree-sidebar", "sidebar-toggle")) this.sidebarOpen = false;
+    if (this.sidebarOpen && !includesClass("map-sidebar", "sidebar-toggle")) this.sidebarOpen = false;
   }
 
   private select(id: string): void { const name = findEntry(this.root, id)?.node.name ?? this.t("element"); this.selectedId = id; this.setStatus(this.t("elementSelected", { name })); }
@@ -375,7 +376,6 @@ export class OrganizerApp extends LitElement {
   }
 
   private beginDraft(parent: OrganizerNode, restoreId = parent.id, insertionIndex = parent.children.length): void {
-    if (this.tutorialOpen) { this.setStatus(this.t("tutorialReadOnly")); return; }
     if (this.draft) return;
     const item = { id: newNodeId(flattenTree(this.root).map(({ node }) => node.id)), name: "", children: [] };
     parent.children.splice(insertionIndex, 0, item);
@@ -385,7 +385,6 @@ export class OrganizerApp extends LitElement {
   }
 
   private addChildToSelected(): void {
-    if (this.tutorialOpen) { this.setStatus(this.t("tutorialReadOnly")); return; }
     if (this.draft) return;
     const selected = findEntry(this.root, this.selectedId) ?? findEntry(this.root, this.root.id);
     if (!selected) return;
@@ -401,7 +400,6 @@ export class OrganizerApp extends LitElement {
   }
 
   private beginEdit(id = this.selectedId): void {
-    if (this.tutorialOpen) { this.setStatus(this.t("tutorialReadOnly")); return; }
     if (this.draft) return;
     const selected = findEntry(this.root, id);
     if (!selected) return;
@@ -424,6 +422,9 @@ export class OrganizerApp extends LitElement {
     if (!item) { this.cancelDraft(); return; }
     const { mode, parentId } = this.draft;
     item.name = name; const id = item.id; this.draft = null;
+    if (this.tutorialOpen) {
+      this.tutorialDocument = { ...this.tutorialDocument, customTextIds: [...new Set([...this.tutorialDocument.customTextIds, id])] };
+    }
     const entry = findEntry(this.root, mode === "create" ? parentId : id)!;
     this.selectedId = entry.node.id;
     if (this.view !== "voronoi") this.path = entry.path;
@@ -449,7 +450,6 @@ export class OrganizerApp extends LitElement {
   }
 
   private indentFile(): void {
-    if (this.tutorialOpen) { this.setStatus(this.t("tutorialReadOnly")); return; }
     const selected = findEntry(this.root, this.selectedId);
     if (!selected?.parent || selected.index <= 0) { this.setStatus(this.t("noPreviousSibling")); return; }
     const siblings = selected.parent.children; const newParent = siblings[selected.index - 1];
@@ -459,7 +459,6 @@ export class OrganizerApp extends LitElement {
   }
 
   private outdentFile(): void {
-    if (this.tutorialOpen) { this.setStatus(this.t("tutorialReadOnly")); return; }
     const selected = findEntry(this.root, this.selectedId);
     if (!selected?.parent) { this.setStatus(this.t("rootCannotMove")); return; }
     const parentEntry = findEntry(this.root, selected.parent.id);
@@ -595,13 +594,13 @@ export class OrganizerApp extends LitElement {
         const label = fitLabel(item.name, Math.max(80, Math.sqrt(polygonArea(polygon)) * .7));
         const isParent = item.id === this.current.id;
         const edges = viewportEdges(polygon, this.width, this.height);
-        const edgeSections = this.tutorialOpen || isParent ? [] : edges.map((edge) => ({
+        const edgeSections = isParent ? [] : edges.map((edge) => ({
           edge,
           band: viewportEdgeBand(polygon, edge, this.width, this.height),
           span: viewportEdgeSpan(polygon, edge, this.width, this.height),
         })).filter(({ band }) => polygonArea(band) >= 1);
         const markerSection = edgeSections.length ? edgeSections.reduce((longest, section) => section.span > longest.span ? section : longest) : undefined;
-        const parentBand = isParent && !this.tutorialOpen ? polygonBottomBand(polygon) : [];
+        const parentBand = isParent ? polygonBottomBand(polygon) : [];
         const addSectionPath = isParent ? roundedPolygonPath(parentBand, 0) : viewportEdgeOverlayPath(polygon, edges, this.width, this.height);
         const markerBand = isParent ? parentBand : markerSection?.band;
         const activateEdge = (event: Event) => { event.preventDefault(); event.stopPropagation(); this.openVoronoiNodeAndAddChild(item); };
@@ -641,7 +640,7 @@ export class OrganizerApp extends LitElement {
           <title>${entry.node.name}</title>
           <circle class="core" r=${radius} fill=${palette[hashString(entry.node.id) % palette.length]}></circle>
           ${selected ? svg`<circle r=${radius + 4} fill="none" stroke="var(--ink)" stroke-width="2"></circle>` : nothing}
-          ${this.tutorialOpen ? nothing : svg`<path class="add-ring" d=${radialArcPath(radius + 8, 225, -45, true)} aria-label=${this.t("addChildren")} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}><title>${this.t("addChildren")}</title></path>`}
+          ${svg`<path class="add-ring" d=${radialArcPath(radius + 8, 225, -45, true)} aria-label=${this.t("addChildren")} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}><title>${this.t("addChildren")}</title></path>`}
           <text y=${entry.depth === 0 ? 39 : 34} @click=${(event: MouseEvent) => { event.stopPropagation(); this.beginEdit(entry.node.id); }}>${entry.node.name.length > 22 ? `${entry.node.name.slice(0, 20)}…` : entry.node.name}</text>
         </g>`;
       })}
@@ -672,14 +671,14 @@ export class OrganizerApp extends LitElement {
 
   private renderSidebar() {
     if (!this.sidebarOpen) return nothing;
-    return html`<aside class="tree-sidebar" aria-label=${this.t("treeList")}>
-      <h2>${this.t("treeList")}</h2>
-      <div class="tree-list">${this.workspace.trees.map((tree) => html`
-        <div class="tree-row ${!this.tutorialOpen && tree.id === this.workspace.activeTreeId ? "active" : ""}" role="button" tabindex="0" aria-current=${!this.tutorialOpen && tree.id === this.workspace.activeTreeId ? "true" : nothing} @click=${() => this.switchTree(tree.id)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "tree", tree.id)} @keydown=${(event: KeyboardEvent) => this.treeRowKey(event, tree.id)}>
-          ${this.editingTreeId === tree.id ? html`<input data-tree-edit class="tree-name-input" maxlength=${ELEMENT_TEXT_LIMIT} .value=${tree.name} aria-label=${this.t("treeText")} @click=${(event: Event) => event.stopPropagation()} @contextmenu=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => this.treeRenameKey(event, tree.id)} @blur=${(event: FocusEvent) => this.commitTreeRename(event.currentTarget as HTMLInputElement, tree.id)} />` : html`<span class="tree-row-label" title=${tree.name}>${tree.name}</span>`}
+    return html`<aside class="map-sidebar" aria-label=${this.t("mapList")}>
+      <h2>${this.t("mapList")}</h2>
+      <div class="map-list">${this.workspace.maps.map((map) => html`
+        <div class="map-row ${!this.tutorialOpen && map.id === this.workspace.activeMapId ? "active" : ""}" role="button" tabindex="0" aria-current=${!this.tutorialOpen && map.id === this.workspace.activeMapId ? "true" : nothing} @click=${() => this.switchMap(map.id)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "map", map.id)} @keydown=${(event: KeyboardEvent) => this.mapRowKey(event, map.id)}>
+          ${this.editingMapId === map.id ? html`<input data-map-edit class="map-name-input" maxlength=${ELEMENT_TEXT_LIMIT} .value=${map.name} aria-label=${this.t("mapText")} @click=${(event: Event) => event.stopPropagation()} @contextmenu=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => this.mapRenameKey(event, map.id)} @blur=${(event: FocusEvent) => this.commitMapRename(event.currentTarget as HTMLInputElement, map.id)} />` : html`<span class="map-row-label" title=${map.name}>${map.name}</span>`}
         </div>`)}
       </div>
-      <div class="tree-sidebar-footer"><button class="tutorial-tree ${this.tutorialOpen ? "active" : ""}" aria-pressed=${this.tutorialOpen} @click=${this.openTutorial}>Tutorial</button><button class="add-tree" aria-label=${this.t("createTree")} title=${this.t("createTree")} @click=${this.createTree}>+ ${this.t("newTree")}</button></div>
+      <div class="map-sidebar-footer"><button class="tutorial-map ${this.tutorialOpen ? "active" : ""}" aria-pressed=${this.tutorialOpen} @click=${this.openTutorial}>Tutorial</button><button class="add-map" aria-label=${this.t("createMap")} title=${this.t("createMap")} @click=${this.createMap}>+ ${this.t("newMap")}</button></div>
     </aside>`;
   }
 
@@ -690,17 +689,17 @@ export class OrganizerApp extends LitElement {
       const entry = findEntry(this.root, menu.id);
       if (!entry) return nothing;
       return html`<div class="context-toolbar" role="toolbar" aria-label=${this.t("elementActions")} style=${`left:${menu.x}px;top:${menu.y}px`}>
-        ${this.tutorialOpen ? nothing : html`<button aria-label=${this.t("editElementAction")} title=${this.t("edit")} @click=${() => { this.contextMenu = null; this.beginEdit(menu.id); }}>${this.renderIcon("edit")}</button>`}
+        <button aria-label=${this.t("editElementAction")} title=${this.t("edit")} @click=${() => { this.contextMenu = null; this.beginEdit(menu.id); }}>${this.renderIcon("edit")}</button>
         <button aria-label=${this.t("copyElementName")} title=${this.t("copyName")} @click=${() => void this.copyElementName(menu.id)}>${this.renderIcon("copy")}</button>
-        ${entry.parent && !this.tutorialOpen ? html`<button aria-label=${this.t("deleteElement")} title=${this.t("delete")} @click=${() => this.deleteElement(menu.id)}>${this.renderIcon("trash")}</button>` : nothing}
+        ${entry.parent ? html`<button aria-label=${this.t("deleteElement")} title=${this.t("delete")} @click=${() => this.deleteElement(menu.id)}>${this.renderIcon("trash")}</button>` : nothing}
       </div>`;
     }
-    const tree = this.workspace.trees.find(({ id }) => id === menu.id);
-    if (!tree) return nothing;
-    return html`<div class="context-toolbar" role="toolbar" aria-label=${this.t("treeActions")} style=${`left:${menu.x}px;top:${menu.y}px`}>
-      <button aria-label=${this.t("editTreeName")} title=${this.t("editName")} @click=${() => this.beginTreeRename(tree.id)}>${this.renderIcon("edit")}</button>
-      <button aria-label=${this.t("duplicateTree")} title=${this.t("duplicate")} @click=${() => this.duplicateWorkspaceTree(tree.id)}>${this.renderIcon("duplicate")}</button>
-      <button aria-label=${this.t("exportTree")} title=${this.t("export")} @click=${() => this.downloadTree(tree)}>${this.renderIcon("download")}</button>
+    const map = this.workspace.maps.find(({ id }) => id === menu.id);
+    if (!map) return nothing;
+    return html`<div class="context-toolbar" role="toolbar" aria-label=${this.t("mapActions")} style=${`left:${menu.x}px;top:${menu.y}px`}>
+      <button aria-label=${this.t("editMapName")} title=${this.t("editName")} @click=${() => this.beginMapRename(map.id)}>${this.renderIcon("edit")}</button>
+      <button aria-label=${this.t("duplicateMap")} title=${this.t("duplicate")} @click=${() => this.duplicateWorkspaceMap(map.id)}>${this.renderIcon("duplicate")}</button>
+      <button aria-label=${this.t("exportMap")} title=${this.t("export")} @click=${() => this.downloadMap(map)}>${this.renderIcon("download")}</button>
     </div>`;
   }
 
@@ -715,7 +714,7 @@ export class OrganizerApp extends LitElement {
         <div class="top-actions"><button class="icon-button theme-toggle" aria-pressed=${this.theme === "dark"} aria-label=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} title=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} @click=${this.toggleTheme}>${this.renderIcon(this.theme === "dark" ? "sun" : "moon")}</button><button class="language-toggle" aria-label=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} title=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} @click=${() => this.setLanguage(this.language === "en" ? "es" : "en")}>${this.language === "en" ? "ES" : "EN"}</button><button class="icon-button" aria-label=${this.t("openHelp")} title=${this.t("help")} @click=${this.openHelp}>${this.renderIcon("help")}</button></div>
       </div>
       <div class="switcher"><view-switcher .view=${this.view} .language=${this.language} @view-change=${(event: CustomEvent<OrganizerView>) => this.chooseView(event.detail)}></view-switcher></div>
-      <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeTreeList" : "openTreeList")} title=${this.t("treeList")} @click=${() => { this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
+      <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
       <button class="quick-add-button" aria-label=${this.t("addChildNode")} title=${this.t("addChildNode")} @click=${this.addChildToSelected}>${this.renderIcon("plus")}</button>
       ${this.renderSidebar()}
       ${this.renderContextToolbar()}

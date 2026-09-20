@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { duplicateTree, ELEMENT_TEXT_LIMIT, flattenTree, importGuestAsBranch, normalizeNode, radialTreeLayout, directionalConnectedCandidates, voronoiPathForSelection } from "./index";
+import { duplicateMap, ELEMENT_TEXT_LIMIT, flattenTree, importGuestAsBranch, normalizeNode, radialTreeLayout, directionalConnectedCandidates, voronoiPathForSelection } from "./index";
 import type { OrganizerNode } from "./types";
 
 const tree = (): OrganizerNode => ({
@@ -33,7 +33,7 @@ describe("organizer tree", () => {
 
   it("duplicates a complete tree with fresh IDs", () => {
     const original = tree();
-    const duplicate = duplicateTree(original, [original]);
+    const duplicate = duplicateMap(original, [original]);
     expect(duplicate.name).toBe("Projects copy");
     expect(duplicate.children.map(({ name }) => name)).toEqual(["A", "B"]);
     const originalIds = new Set(flattenTree(original).map(({ node }) => node.id));

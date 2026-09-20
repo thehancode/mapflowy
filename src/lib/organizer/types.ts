@@ -4,15 +4,15 @@ export interface OrganizerNode {
   children: OrganizerNode[];
 }
 
-export interface OrganizerDocument {
+export interface OrganizerMapDocument {
   version: 1;
   root: OrganizerNode;
 }
 
 export interface OrganizerWorkspaceDocument {
-  version: 2;
-  activeTreeId: string;
-  trees: OrganizerNode[];
+  version: 3;
+  activeMapId: string;
+  maps: OrganizerNode[];
 }
 
 export interface TreeEntry {

@@ -12,8 +12,8 @@ describe("organizer translations", () => {
   });
 
   it("uses localized creation labels", () => {
-    expect(translate("en", "newTree")).toBe("New tree");
-    expect(translate("es", "newTree")).toBe("Nuevo árbol");
+    expect(translate("en", "newMap")).toBe("New map");
+    expect(translate("es", "newMap")).toBe("Nuevo mapa");
     expect(translate("en", "addChildNode")).toBe("Add child-node");
     expect(translate("es", "addChildNode")).toBe("Añadir nodo-hijo");
   });
