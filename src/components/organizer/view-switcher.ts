@@ -25,9 +25,9 @@ export class ViewSwitcher extends LitElement {
 
   render() {
     return html`<div role="group" aria-label=${translate(this.language, "displayMode")}>
-      <button aria-pressed=${this.view === "voronoi"} @click=${() => this.choose("voronoi")}>${translate(this.language, "voronoiView")}</button>
-      <button aria-pressed=${this.view === "tree"} @click=${() => this.choose("tree")}>${translate(this.language, "graphView")}</button>
-      <button aria-pressed=${this.view === "file"} @click=${() => this.choose("file")}>${translate(this.language, "treeView")}</button>
+      <button aria-pressed=${this.view === "voronoi"} @click=${() => this.choose("voronoi")}>1. ${translate(this.language, "voronoiView")}</button>
+      <button aria-pressed=${this.view === "tree"} @click=${() => this.choose("tree")}>2. ${translate(this.language, "graphView")}</button>
+      <button aria-pressed=${this.view === "file"} @click=${() => this.choose("file")}>3. ${translate(this.language, "treeView")}</button>
     </div>`;
   }
 }

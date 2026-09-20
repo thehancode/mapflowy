@@ -12,14 +12,14 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 describe("organizer user config", () => {
-  it("stores the theme separately from the tree document", () => {
-    const treeDocument = '{"version":1,"root":{"id":"root","name":"Projects","children":[]}}';
-    const storage = memoryStorage({ [STORAGE_KEY]: treeDocument });
+  it("stores the theme separately from the map document", () => {
+    const mapDocument = '{"version":1,"root":{"id":"root","name":"Projects","children":[]}}';
+    const storage = memoryStorage({ [STORAGE_KEY]: mapDocument });
     const repository = createUserConfigRepository({ storage, browserLanguages: ["en-US"] });
 
     expect(repository.save({ version: 2, theme: "dark", language: "es" })).toBe(true);
     expect(storage.values.get(USER_CONFIG_STORAGE_KEY)).toBe('{"version":2,"theme":"dark","language":"es"}');
-    expect(storage.values.get(STORAGE_KEY)).toBe(treeDocument);
+    expect(storage.values.get(STORAGE_KEY)).toBe(mapDocument);
   });
 
   it("migrates a saved theme and falls back safely for invalid config", () => {

@@ -3,19 +3,22 @@ import { customElement, property, state } from "lit/decorators.js";
 import "./view-switcher";
 import type { OrganizerLanguage, OrganizerNode, OrganizerWorkspaceDocument, Point, LayoutEntry, OrganizerTheme, TranslationKey, TutorialDocument } from "../../lib/organizer";
 import {
-  circleLayout, collectNodeIds, createRepository, createTutorialDocument, createTutorialRepository, createUserConfigRepository, duplicateMap, ELEMENT_TEXT_LIMIT, findEntry, flattenTree, fitLabel, GRAPH_ROOT_RADIUS, localizeTutorialDocument, newNodeId, normalizeElementText,
+  canPlaceSubtreeAtDepth, circleLayout, collectNodeIds, createRepository, createTutorialDocument, createTutorialRepository, createUserConfigRepository, duplicateMap, ELEMENT_TEXT_LIMIT, findEntry, flattenTree, fitLabel, GRAPH_ROOT_RADIUS, localizeTutorialDocument, MAX_TREE_LEVELS, newNodeId, normalizeElementText,
   polygonArea, polygonBottomBand, polygonCentroid, radialArcPath, radialLinkPath, radialTreeLayout, roundedPolygonPath, visibleItems,
   translate, viewportEdgeBand, viewportEdgeOverlayPath, viewportEdges, viewportEdgeSpan, voronoiPathForSelection, voronoiPolygons,
 } from "../../lib/organizer";
 import type { OrganizerView } from "./view-switcher";
 
 const palette = ["#f38b70", "#efc65d", "#71c1b2", "#88afe0", "#b99bdf", "#df9eb6", "#9fc477", "#e5a665"];
+const treeLevelSymbols = ["●", "◆", "■", "▲"] as const;
+const treeLevelColors = ["#e45745", "#db8437", "#c2a12f", "#79a944", "#3e9f70", "#329a98", "#4089c7", "#5d70c5", "#8860bd", "#ad5da5", "#c65e7b", "#a46d52"] as const;
 const initialRoot: OrganizerNode = { id: "node-1", name: "Projects", children: [] };
 type ContextMenuState = { kind: "element" | "map"; id: string; x: number; y: number };
 const directions: Record<string, Point> = {
   ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 },
   ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 },
 };
+const viewShortcuts: Partial<Record<string, OrganizerView>> = { "1": "voronoi", "2": "tree", "3": "file" };
 
 function hashString(value: string): number {
   let hash = 2166136261;
@@ -41,6 +44,8 @@ export class OrganizerApp extends LitElement {
   @state() private height = 720;
   @state() private draft: { id: string; parentId: string; restoreId: string; mode: "create" | "edit" } | null = null;
   @state() private sidebarOpen = false;
+  @state() private helpOpen = false;
+  @state() private depthLimitOpen = false;
   @state() private editingMapId: string | null = null;
   @state() private contextMenu: ContextMenuState | null = null;
   @state() private toast = "";
@@ -113,8 +118,8 @@ export class OrganizerApp extends LitElement {
     .file-tree { min-height: 100%; padding: 5.6rem 1.1rem 5.5rem; }
     .file-row { display: flex; align-items: center; min-height: 44px; margin-left: calc(var(--depth) * 28px); padding: .35rem .65rem; border: 1px solid transparent; border-radius: 9px; cursor: pointer; }
     .file-row:hover { background: var(--row-hover); }
-    .file-row.selected { align-items: flex-start; border-color: var(--panel-border); background: var(--row-selected); box-shadow: 0 3px 12px var(--shadow); }
-    .branch { flex: 0 0 20px; width: 20px; color: #eb4d28; }
+    .file-row.selected { border-color: var(--panel-border); background: var(--row-selected); box-shadow: 0 3px 12px var(--shadow); }
+    .branch { flex: 0 0 20px; width: 20px; font-size: .78rem; line-height: 1; text-align: center; }
     .name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; font-weight: 680; }
     .file-row.selected .name { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: pre-wrap; }
     .meta { flex: 0 0 auto; margin-left: auto; padding-left: 1rem; color: var(--muted); font-size: .7rem; }
@@ -123,14 +128,21 @@ export class OrganizerApp extends LitElement {
     .toast { position: fixed; z-index: 60; left: 50%; bottom: 1.25rem; max-width: calc(100vw - 2rem); padding: .7rem 1rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--ink); color: var(--background); box-shadow: 0 12px 36px var(--shadow); font-size: .82rem; font-weight: 750; transform: translateX(-50%); }
     .toast.raised { bottom: 6rem; }
     .storage-note { position: absolute; z-index: 9; right: 1rem; bottom: 1rem; padding: .55rem .75rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .7rem; font-weight: 700; }
+    .help-toggle { position: absolute; z-index: 12; right: 1rem; bottom: 4rem; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); font-weight: 850; cursor: pointer; }
+    .help-popover { position: absolute; z-index: 30; right: 1rem; bottom: 7.25rem; width: min(390px, calc(100vw - 2rem)); max-height: min(62dvh, 520px); overflow-y: auto; padding: 1rem 1.15rem; border: 1px solid var(--panel-border); border-radius: 18px; outline: 0; background: var(--dialog); color: var(--ink); box-shadow: 0 22px 64px var(--shadow); }
+    .help-popover h2 { margin: 0 0 .5rem; font-size: 1rem; }
+    .help-popover ul { margin: 0; padding: 0; color: var(--muted); list-style: none; }
+    .help-popover li:not(.shortcut-section) { display: grid; grid-template-columns: minmax(8.5rem, auto) 1fr; align-items: center; gap: 1rem; min-height: 1.8rem; }
+    .help-popover .shortcut-keys { justify-self: start; white-space: nowrap; }
+    .help-popover .shortcut-description { justify-self: end; text-align: right; }
+    .help-popover .shortcut-section { margin-top: .65rem; color: var(--ink); font-weight: 800; text-align: right; }
+    .modal-backdrop { position: fixed; z-index: 70; inset: 0; display: grid; place-items: center; padding: 1rem; background: rgba(23,26,23,.38); backdrop-filter: blur(4px); }
+    .depth-limit-modal { width: min(430px, 100%); padding: 1.25rem; border: 1px solid var(--panel-border); border-radius: 18px; outline: 0; background: var(--dialog); color: var(--ink); box-shadow: 0 30px 90px var(--shadow); }
+    .depth-limit-modal h2 { margin: 0 0 .65rem; font-size: 1.05rem; }
+    .depth-limit-modal p { margin: 0; color: var(--muted); line-height: 1.55; }
+    .depth-limit-modal button { display: block; min-height: 2.5rem; margin: 1rem 0 0 auto; padding: 0 1rem; border: 0; border-radius: 9px; background: var(--ink); color: var(--background); font-weight: 750; cursor: pointer; }
     .save-error { position: fixed; z-index: 55; left: 50%; bottom: 1rem; width: min(560px, calc(100vw - 2rem)); padding: .8rem 1rem; border: 1px solid #8f2f21; border-radius: 12px; background: #fff1ed; color: #702317; box-shadow: 0 12px 36px var(--shadow); font-size: .8rem; font-weight: 720; line-height: 1.4; text-align: center; transform: translateX(-50%); }
     :host([theme="dark"]) .save-error { border-color: #e7806d; background: #3a201b; color: #ffd9d1; }
-    dialog { width: min(460px, calc(100% - 2rem)); border: 1px solid var(--panel-border); border-radius: 18px; padding: 1.2rem; background: var(--dialog); color: var(--ink); box-shadow: 0 30px 90px var(--shadow); }
-    dialog::backdrop { background: rgba(23,26,23,.38); backdrop-filter: blur(4px); }
-    dialog h2 { margin: 0 0 .5rem; }
-    dialog ul { padding-left: 1.2rem; line-height: 1.8; color: var(--muted); }
-    dialog .shortcut-section { margin-top: .65rem; color: var(--ink); font-weight: 800; list-style: none; }
-    dialog button { min-height: 2.5rem; padding: 0 1rem; border: 0; border-radius: 9px; background: var(--ink); color: var(--background); font-weight: 750; cursor: pointer; }
     kbd { padding: .15rem .38rem; border: 1px solid var(--panel-border); border-bottom-width: 2px; border-radius: 5px; background: var(--kbd); font: 700 .72rem system-ui; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     :focus-visible { outline: 2px solid #eb4d28; outline-offset: 2px; }
@@ -141,6 +153,8 @@ export class OrganizerApp extends LitElement {
       .sidebar-toggle { left: .65rem; bottom: .65rem; }
       .quick-add-button { left: 3.9rem; bottom: .65rem; }
       .storage-note { right: .65rem; bottom: .65rem; }
+      .help-toggle { right: .65rem; bottom: 3.65rem; }
+      .help-popover { right: .65rem; bottom: 6.9rem; width: calc(100vw - 1.3rem); }
       .map-sidebar { left: .65rem; bottom: 4rem; width: min(310px, calc(100vw - 1.3rem)); }
       .file-tree { padding-top: 8.2rem; }
       .file-row { margin-left: calc(var(--depth) * 18px); }
@@ -184,12 +198,24 @@ export class OrganizerApp extends LitElement {
     if (changed.has("contextMenu") && this.contextMenu) requestAnimationFrame(() => {
       this.renderRoot.querySelector<HTMLButtonElement>(".context-toolbar button")?.focus();
     });
+    if (changed.has("helpOpen") && this.helpOpen) requestAnimationFrame(() => {
+      this.renderRoot.querySelector<HTMLElement>(".help-popover")?.focus();
+    });
+    if (changed.has("depthLimitOpen") && this.depthLimitOpen) requestAnimationFrame(() => {
+      this.renderRoot.querySelector<HTMLButtonElement>(".depth-limit-modal button")?.focus();
+    });
   }
 
   private get root(): OrganizerNode { return this.tutorialOpen ? this.tutorialDocument.root : this.workspace.maps.find(({ id }) => id === this.workspace.activeMapId) ?? this.workspace.maps[0]; }
   private get current(): OrganizerNode { return this.path[this.path.length - 1]; }
   private t(key: TranslationKey, values: Record<string, string | number> = {}): string { return translate(this.language, key, values); }
   private setStatus(message: string): void { this.status = message; }
+
+  private showDepthLimit(): void {
+    this.contextMenu = null;
+    this.helpOpen = false;
+    this.depthLimitOpen = true;
+  }
 
   private showToast(message: string): void {
     this.toast = message;
@@ -210,7 +236,7 @@ export class OrganizerApp extends LitElement {
     if (this.tutorialOpen) {
       this.path = findEntry(this.tutorialDocument.root, this.selectedId)?.path ?? [this.tutorialDocument.root];
     }
-    this.tutorialRepository.save(this.tutorialDocument);
+    this.storageSaveFailed = !this.tutorialRepository.save(this.tutorialDocument);
     this.toast = "";
     this.configRepository.save({ version: 2, theme: this.theme, language });
     this.setStatus(translate(language, language === "es" ? "languageSpanishEnabled" : "languageEnglishEnabled"));
@@ -230,15 +256,20 @@ export class OrganizerApp extends LitElement {
     this.requestUpdate();
   }
 
+  private persistMaps(): void {
+    this.storageSaveFailed = !this.repository.save(this.workspace);
+    this.requestUpdate();
+  }
+
   private resetToRoot(message: string): void {
     this.path = [this.root]; this.selectedId = this.root.id; this.draft = null; this.contextMenu = null; this.treeCycles.clear();
     this.setStatus(message);
   }
 
   private switchMap(id: string): void {
+    if (this.draft) this.cancelDraft();
     if (this.tutorialOpen) this.tutorialOpen = false;
     if (id === this.workspace.activeMapId) { this.resetToRoot(this.t("opened", { name: this.root.name })); return; }
-    if (this.draft) this.cancelDraft();
     const map = this.workspace.maps.find((candidate) => candidate.id === id);
     if (!map) return;
     this.workspace = { ...this.workspace, activeMapId: id };
@@ -275,7 +306,7 @@ export class OrganizerApp extends LitElement {
     if (!map) { this.editingMapId = null; return; }
     const name = normalizeElementText(input.value, "");
     if (name) map.name = name;
-    this.editingMapId = null; this.persist(); this.setStatus(this.t("renamed", { name: map.name }));
+    this.editingMapId = null; this.persistMaps(); this.setStatus(this.t("renamed", { name: map.name }));
   }
 
   private mapRenameKey(event: KeyboardEvent, id: string): void {
@@ -290,13 +321,14 @@ export class OrganizerApp extends LitElement {
     const duplicate = duplicateMap(this.workspace.maps[index], this.workspace.maps);
     const maps = [...this.workspace.maps]; maps.splice(index + 1, 0, duplicate);
     this.workspace = { version: 3, activeMapId: duplicate.id, maps };
+    this.tutorialOpen = false;
     this.editingMapId = null; this.resetToRoot(this.t("created", { name: duplicate.name })); this.persist();
   }
 
   private downloadMap(root: OrganizerNode): void {
     const blob = new Blob([this.repository.exportMapJson(root)], { type: "application/json" });
     const url = URL.createObjectURL(blob), link = document.createElement("a");
-    const filename = root.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "organizer";
+    const filename = root.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "mapflowy-map";
     link.href = url; link.download = `${filename}.json`; link.click(); URL.revokeObjectURL(url);
     this.contextMenu = null; this.setStatus(this.t("exported", { name: root.name }));
   }
@@ -360,6 +392,7 @@ export class OrganizerApp extends LitElement {
     const includesClass = (...classNames: string[]) => path.some((target) => target instanceof Element && classNames.some((className) => target.classList.contains(className)));
     if (this.contextMenu && !includesClass("context-toolbar")) this.contextMenu = null;
     if (this.sidebarOpen && !includesClass("map-sidebar", "sidebar-toggle")) this.sidebarOpen = false;
+    if (this.helpOpen && !includesClass("help-popover", "help-toggle")) this.helpOpen = false;
   }
 
   private select(id: string): void { const name = findEntry(this.root, id)?.node.name ?? this.t("element"); this.selectedId = id; this.setStatus(this.t("elementSelected", { name })); }
@@ -377,6 +410,9 @@ export class OrganizerApp extends LitElement {
 
   private beginDraft(parent: OrganizerNode, restoreId = parent.id, insertionIndex = parent.children.length): void {
     if (this.draft) return;
+    const parentEntry = findEntry(this.root, parent.id);
+    if (!parentEntry) return;
+    if (parentEntry.depth + 2 > MAX_TREE_LEVELS) { this.showDepthLimit(); return; }
     const item = { id: newNodeId(flattenTree(this.root).map(({ node }) => node.id)), name: "", children: [] };
     parent.children.splice(insertionIndex, 0, item);
     this.draft = { id: item.id, parentId: parent.id, restoreId, mode: "create" };
@@ -452,6 +488,7 @@ export class OrganizerApp extends LitElement {
   private indentFile(): void {
     const selected = findEntry(this.root, this.selectedId);
     if (!selected?.parent || selected.index <= 0) { this.setStatus(this.t("noPreviousSibling")); return; }
+    if (!canPlaceSubtreeAtDepth(selected.node, selected.depth + 1)) { this.showDepthLimit(); return; }
     const siblings = selected.parent.children; const newParent = siblings[selected.index - 1];
     siblings.splice(selected.index, 1); newParent.children.push(selected.node);
     this.path = findEntry(this.root, selected.node.id)!.path; this.treeCycles.clear(); this.persist();
@@ -513,25 +550,32 @@ export class OrganizerApp extends LitElement {
     const target = event.composedPath()[0];
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
     if (!this.isConnected) return;
+    if (this.depthLimitOpen) {
+      if (event.key === "Escape") { event.preventDefault(); this.depthLimitOpen = false; }
+      return;
+    }
     if (event.key === "Escape" && this.contextMenu) { event.preventDefault(); this.contextMenu = null; return; }
     if (event.key === "Escape" && this.sidebarOpen) { event.preventDefault(); this.sidebarOpen = false; return; }
+    if (event.key === "Escape" && this.helpOpen) { event.preventDefault(); this.helpOpen = false; return; }
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); this.openKeyboardElementMenu(); return; }
     if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (event.key === "?") { event.preventDefault(); this.openHelp(); return; }
+    const shortcutView = viewShortcuts[event.key];
+    if (shortcutView) { event.preventDefault(); this.chooseView(shortcutView); return; }
+    if (event.key === "?") { event.preventDefault(); this.helpOpen = !this.helpOpen; return; }
     if (event.key.toLowerCase() === "e") { event.preventDefault(); this.beginEdit(); return; }
     if (this.view === "file") {
       if (event.key === "Tab") { event.preventDefault(); event.shiftKey ? this.outdentFile() : this.indentFile(); }
       else if (event.key === "Enter") { event.preventDefault(); this.beginFileDraft(false); }
-      else if (event.key.toLowerCase() === "n") { event.preventDefault(); this.beginFileDraft(true); }
+      else if (event.key.toLowerCase() === "a") { event.preventDefault(); this.beginFileDraft(true); }
       else if (event.key in directions) { event.preventDefault(); this.moveFile(event.key); }
       return;
     }
     if (this.view === "tree") {
-      if (event.key.toLowerCase() === "n") { event.preventDefault(); this.beginDraft(this.current); }
+      if (event.key.toLowerCase() === "a") { event.preventDefault(); this.beginDraft(this.current); }
       else if (event.key in directions) { event.preventDefault(); this.moveTree(event.key); }
       return;
     }
-    if (event.key.toLowerCase() === "n") { event.preventDefault(); this.beginDraft(this.current); }
+    if (event.key.toLowerCase() === "a") { event.preventDefault(); this.beginDraft(this.current); }
     else if (event.key in directions) { event.preventDefault(); this.moveVoronoi(event.key); }
     else if (event.key === "Enter" && event.shiftKey) { event.preventDefault(); this.goBack(); }
     else if (event.key === "Enter") { event.preventDefault(); this.openSelected(); }
@@ -580,8 +624,6 @@ export class OrganizerApp extends LitElement {
   }
 
   private chooseTreeNode(entry: LayoutEntry): void { this.path = entry.path; this.selectedId = entry.node.id; this.setStatus(this.t("nowCurrentLevel", { name: entry.node.name })); }
-
-  private openHelp(): void { this.renderRoot.querySelector<HTMLDialogElement>("dialog")?.showModal(); }
 
   private renderVoronoi() {
     const items = visibleItems(this.current), points = circleLayout(items.length);
@@ -650,17 +692,16 @@ export class OrganizerApp extends LitElement {
   private renderFileTree() {
     return html`<div class="file-tree" role="tree" aria-label=${this.t("projectTree")}>${flattenTree(this.root).map((entry) => html`
       <div class="file-row ${entry.node.id === this.selectedId ? "selected" : ""}" data-node-id=${entry.node.id} style="--depth:${entry.depth}" role="treeitem" aria-level=${entry.depth + 1} aria-selected=${entry.node.id === this.selectedId} @click=${() => { if (!this.draft) { this.path = entry.path; this.select(entry.node.id); } }} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)}>
-        <span class="branch" aria-hidden="true">${entry.node.children.length ? "◆" : "·"}</span>
+        <span class="branch" style=${`color:${treeLevelColors[entry.depth % treeLevelColors.length]}`} aria-hidden="true">${treeLevelSymbols[entry.depth % treeLevelSymbols.length]}</span>
         ${entry.node.id === this.draft?.id ? html`<input data-draft class="file-editor" maxlength=${ELEMENT_TEXT_LIMIT} aria-label=${this.t(this.draft.mode === "edit" ? "editorEdit" : "editorNew")} .value=${this.draft.mode === "edit" ? entry.node.name : ""} @click=${(event: Event) => event.stopPropagation()} @keydown=${this.draftKey} @blur=${(event: FocusEvent) => this.commitDraft(event.currentTarget as HTMLInputElement)} />` : html`<span class="name" title=${entry.node.id === this.selectedId ? nothing : entry.node.name}>${entry.node.name}</span><span class="meta">${entry.node.children.length ? this.t(entry.node.children.length === 1 ? "childCountOne" : "childCountMany", { count: entry.node.children.length }) : ""}</span>`}
       </div>`)} </div>`;
   }
 
-  private renderIcon(name: "menu" | "back" | "sun" | "moon" | "help" | "copy" | "trash" | "edit" | "duplicate" | "download" | "plus") {
+  private renderIcon(name: "menu" | "back" | "sun" | "moon" | "copy" | "trash" | "edit" | "duplicate" | "download" | "plus") {
     if (name === "menu") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>`;
     if (name === "back") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6M9 12h10"></path></svg>`;
     if (name === "sun") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41"></path></svg>`;
     if (name === "moon") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.2A8.5 8.5 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2Z"></path></svg>`;
-    if (name === "help") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.7 9a2.5 2.5 0 1 1 3.6 2.25c-.8.4-1.3.9-1.3 1.75M12 17h.01"></path></svg>`;
     if (name === "copy") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>`;
     if (name === "trash") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path></svg>`;
     if (name === "edit") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20ZM14.5 7.5l3 3"></path></svg>`;
@@ -711,22 +752,44 @@ export class OrganizerApp extends LitElement {
           <nav class="crumbs" aria-label=${this.t("currentLocation")}>${this.path.map((node, index) => html`${index ? html`<span class="separator" aria-hidden="true">/</span>` : nothing}<button class="crumb" aria-current=${index === this.path.length - 1 ? "location" : nothing} @click=${() => this.chooseBreadcrumb(node, index)}>${node.name}</button>`)}</nav>
           ${this.view === "voronoi" && this.path.length > 1 ? html`<button class="back-button" aria-label=${this.t("goUpOneLevel")} title=${this.t("goBack")} @click=${this.goBack}>${this.renderIcon("back")}</button>` : nothing}
         </div>
-        <div class="top-actions"><button class="icon-button theme-toggle" aria-pressed=${this.theme === "dark"} aria-label=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} title=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} @click=${this.toggleTheme}>${this.renderIcon(this.theme === "dark" ? "sun" : "moon")}</button><button class="language-toggle" aria-label=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} title=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} @click=${() => this.setLanguage(this.language === "en" ? "es" : "en")}>${this.language === "en" ? "ES" : "EN"}</button><button class="icon-button" aria-label=${this.t("openHelp")} title=${this.t("help")} @click=${this.openHelp}>${this.renderIcon("help")}</button></div>
+        <div class="top-actions"><button class="icon-button theme-toggle" aria-pressed=${this.theme === "dark"} aria-label=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} title=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} @click=${this.toggleTheme}>${this.renderIcon(this.theme === "dark" ? "sun" : "moon")}</button><button class="language-toggle" aria-label=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} title=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} @click=${() => this.setLanguage(this.language === "en" ? "es" : "en")}>${this.language === "en" ? "ES" : "EN"}</button></div>
       </div>
       <div class="switcher"><view-switcher .view=${this.view} .language=${this.language} @view-change=${(event: CustomEvent<OrganizerView>) => this.chooseView(event.detail)}></view-switcher></div>
       <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
       <button class="quick-add-button" aria-label=${this.t("addChildNode")} title=${this.t("addChildNode")} @click=${this.addChildToSelected}>${this.renderIcon("plus")}</button>
       ${this.renderSidebar()}
       ${this.renderContextToolbar()}
+      <button class="help-toggle" aria-expanded=${this.helpOpen} aria-controls="keyboard-help" aria-label=${this.t("openHelp")} title=${this.t("help")} @click=${() => { this.helpOpen = !this.helpOpen; this.contextMenu = null; }}>?</button>
+      ${this.helpOpen ? html`<section id="keyboard-help" class="help-popover" role="dialog" aria-modal="false" aria-labelledby="keyboard-help-title" tabindex="-1">
+        <h2 id="keyboard-help-title">${this.t("keyboardHelp")}</h2>
+        <ul>
+          <li class="shortcut-section">${this.t("generalShortcuts")}</li>
+          <li><span class="shortcut-keys"><kbd>A</kbd></span><span class="shortcut-description">${this.t("addChild")}</span></li>
+          <li><span class="shortcut-keys"><kbd>E</kbd></span><span class="shortcut-description">${this.t("editElement")}</span></li>
+          <li><span class="shortcut-keys"><kbd>↑ ↓ ← →</kbd></span><span class="shortcut-description">${this.t("move")}</span></li>
+          <li><span class="shortcut-keys"><kbd>1</kbd></span><span class="shortcut-description">${this.t("voronoiView")}</span></li>
+          <li><span class="shortcut-keys"><kbd>2</kbd></span><span class="shortcut-description">${this.t("graphView")}</span></li>
+          <li><span class="shortcut-keys"><kbd>3</kbd></span><span class="shortcut-description">${this.t("treeView")}</span></li>
+          <li class="shortcut-section">${this.t("shortcutVoronoi")}</li>
+          <li><span class="shortcut-keys"><kbd>Enter</kbd></span><span class="shortcut-description">${this.t("openNode")}</span></li>
+          <li><span class="shortcut-keys"><kbd>Shift</kbd> + <kbd>Enter</kbd></span><span class="shortcut-description">${this.t("goBack")}</span></li>
+          <li class="shortcut-section">${this.t("treeView")}</li>
+          <li><span class="shortcut-keys"><kbd>Enter</kbd></span><span class="shortcut-description">${this.t("shortcutAddSibling")}</span></li>
+          <li><span class="shortcut-keys"><kbd>Tab</kbd></span><span class="shortcut-description">${this.t("shortcutIndent")}</span></li>
+          <li><span class="shortcut-keys"><kbd>Shift</kbd> + <kbd>Tab</kbd></span><span class="shortcut-description">${this.t("shortcutOutdent")}</span></li>
+        </ul>
+      </section>` : nothing}
+      ${this.depthLimitOpen ? html`<div class="modal-backdrop" @click=${(event: MouseEvent) => { if (event.target === event.currentTarget) this.depthLimitOpen = false; }}>
+        <section class="depth-limit-modal" role="alertdialog" aria-modal="true" aria-labelledby="depth-limit-title" aria-describedby="depth-limit-message">
+          <h2 id="depth-limit-title">${this.t("depthLimitTitle")}</h2>
+          <p id="depth-limit-message">${this.t("depthLimitMessage", { count: MAX_TREE_LEVELS })}</p>
+          <button @click=${() => { this.depthLimitOpen = false; }}>${this.t("close")}</button>
+        </section>
+      </div>` : nothing}
       <span class="storage-note" title=${this.t("savedHereTitle")}>${this.t("savedHere")}</span>
       ${this.storageSaveFailed ? html`<div class="save-error" role="alert">${this.t("saveError")}</div>` : nothing}
       ${this.toast ? html`<div class="toast ${this.storageSaveFailed ? "raised" : ""}" role="status">${this.toast}</div>` : nothing}
       <p class="sr-only" aria-live="polite">${this.status}</p>
-      <dialog @click=${(event: MouseEvent) => { if (event.target === event.currentTarget) (event.currentTarget as HTMLDialogElement).close(); }}>
-        <h2>${this.t("keyboardHelp")}</h2>
-        <ul><li class="shortcut-section">${this.t("generalShortcuts")}</li><li><kbd>N</kbd> ${this.t("addChild")}</li><li><kbd>E</kbd> ${this.t("editElement")}</li><li><kbd>↑ ↓ ← →</kbd> ${this.t("move")}</li><li class="shortcut-section">${this.t("shortcutVoronoi")}</li><li><kbd>Enter</kbd> ${this.t("openOrAddSibling")}</li><li><kbd>Shift</kbd> + <kbd>Enter</kbd> ${this.t("goBack")}</li><li class="shortcut-section">${this.t("treeView")}</li><li><kbd>Tab</kbd> / <kbd>Shift</kbd> + <kbd>Tab</kbd> ${this.t("shortcutIndent")}</li></ul>
-        <button @click=${() => this.renderRoot.querySelector<HTMLDialogElement>("dialog")?.close()}>${this.t("close")}</button>
-      </dialog>
     </main>`;
   }
 }

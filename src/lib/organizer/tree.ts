@@ -2,6 +2,7 @@ import type { OrganizerNode, TreeEntry, Point, LayoutEntry, RadialTreeLayout } f
 
 export const ELEMENT_TEXT_LIMIT = 4096;
 export const GRAPH_ROOT_RADIUS = 24;
+export const MAX_TREE_LEVELS = 12;
 
 export function normalizeElementText(value: string, fallback = 'Untitled'): string {
   return (value.trim() || fallback).slice(0, ELEMENT_TEXT_LIMIT);
@@ -37,6 +38,14 @@ function flattenTreeWithIndex(node: OrganizerNode, parent: OrganizerNode, depth:
 
 export function findEntry(root: OrganizerNode, id: string): TreeEntry | null {
   return flattenTree(root).find((entry) => entry.node.id === id) ?? null;
+}
+
+export function subtreeLevels(node: OrganizerNode): number {
+  return 1 + (node.children.length ? Math.max(...node.children.map(subtreeLevels)) : 0);
+}
+
+export function canPlaceSubtreeAtDepth(node: OrganizerNode, depth: number, maxLevels = MAX_TREE_LEVELS): boolean {
+  return depth >= 0 && depth + subtreeLevels(node) <= maxLevels;
 }
 export function voronoiPathForSelection(root: OrganizerNode, id: string): OrganizerNode[] {
   const entry = findEntry(root, id);

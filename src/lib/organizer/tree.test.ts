@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { duplicateMap, ELEMENT_TEXT_LIMIT, flattenTree, importGuestAsBranch, normalizeNode, radialTreeLayout, directionalConnectedCandidates, voronoiPathForSelection } from "./index";
+import { canPlaceSubtreeAtDepth, duplicateMap, ELEMENT_TEXT_LIMIT, flattenTree, importGuestAsBranch, MAX_TREE_LEVELS, normalizeNode, radialTreeLayout, directionalConnectedCandidates, subtreeLevels, voronoiPathForSelection } from "./index";
 import type { OrganizerNode } from "./types";
 
 const tree = (): OrganizerNode => ({
@@ -20,6 +20,16 @@ describe("organizer tree", () => {
   it("limits each element's stored text to 4096 characters", () => {
     const normalized = normalizeNode({ id: "long", name: "x".repeat(ELEMENT_TEXT_LIMIT + 100), children: [] });
     expect(normalized.name).toHaveLength(ELEMENT_TEXT_LIMIT);
+  });
+
+  it("limits newly placed subtrees to twelve levels", () => {
+    const branch: OrganizerNode = { id: "branch", name: "Branch", children: [{ id: "leaf", name: "Leaf", children: [] }] };
+    expect(MAX_TREE_LEVELS).toBe(12);
+    expect(subtreeLevels(branch)).toBe(2);
+    expect(canPlaceSubtreeAtDepth(branch, 10)).toBe(true);
+    expect(canPlaceSubtreeAtDepth(branch, 11)).toBe(false);
+    expect(canPlaceSubtreeAtDepth(branch.children[0], 11)).toBe(true);
+    expect(canPlaceSubtreeAtDepth(branch.children[0], 12)).toBe(false);
   });
 
   it("imports guest data as a fresh, non-colliding branch", () => {

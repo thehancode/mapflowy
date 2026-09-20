@@ -15,15 +15,15 @@ export interface TutorialDocument {
 
 const tutorialText = {
   en: {
-    create: "Create nodes", pressN: "Press N", ring: "Click the ring", plus: "Click the +",
+    create: "Add nodes", pressA: "Press A", ring: "Click the ring", plus: "Click the +",
     edit: "Edit nodes", pressE: "Press E", text: "Click the text", actions: "Right-click actions",
-    move: "Move around", arrows: "Use arrow keys", enter: "Enter opens nodes",
+    move: "Move around", arrows: "Use arrow keys", enter: "Change the view",
     createMap: "Create map", menu: "Click the menu", newMap: "+ New map",
   },
   es: {
-    create: "Crear nodos", pressN: "Presiona N", ring: "Haz clic en el aro", plus: "Haz clic en +",
-    edit: "Editar nodos", pressE: "Presiona E", text: "Haz clic en el texto", actions: "Acciones: clic der.",
-    move: "Moverse", arrows: "Usa las flechas", enter: "Enter abre nodos",
+    create: "Añadir nodos", pressA: "Presiona A", ring: "Clic en el aro", plus: "Clic en +",
+    edit: "Editar nodos", pressE: "Presiona E", text: "Clic en el texto", actions: "Clic derecho",
+    move: "Moverse", arrows: "Usa las flechas", enter: "Cambia la vista",
     createMap: "Crear mapa", menu: "Click en el menú", newMap: "+ Nuevo mapa",
   },
 } as const;
@@ -44,7 +44,7 @@ export function createTutorialTree(language: OrganizerLanguage): OrganizerNode {
         { id: "tutorial-edit-actions", name: text.actions, children: [] },
       ] },
       { id: "tutorial-create", name: text.create, children: [
-        { id: "tutorial-create-n", name: text.pressN, children: [] },
+        { id: "tutorial-create-n", name: text.pressA, children: [] },
         { id: "tutorial-create-ring", name: text.ring, children: [] },
         { id: "tutorial-create-plus", name: text.plus, children: [] },
       ] },
