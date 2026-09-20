@@ -9,6 +9,12 @@ export interface OrganizerDocument {
   root: OrganizerNode;
 }
 
+export interface OrganizerWorkspaceDocument {
+  version: 2;
+  activeTreeId: string;
+  trees: OrganizerNode[];
+}
+
 export interface TreeEntry {
   node: OrganizerNode;
   parent: OrganizerNode | null;

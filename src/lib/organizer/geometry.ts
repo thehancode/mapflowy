@@ -52,6 +52,12 @@ export function viewportEdgeBand(polygon: Polygon, edge: ViewportEdge, width: nu
   return band;
 }
 
+export function polygonBottomBand(polygon: Polygon, thickness = 80): Polygon {
+  if (!polygon.length) return [];
+  const bottom = Math.max(...polygon.map(({ y }) => y));
+  return clipPolygon(polygon, 0, -1, thickness - bottom);
+}
+
 export function circleLayout(count: number): Point[] {
   if (count <= 0) return [];
   if (count === 1) return [{ x: .5, y: .5 }];

@@ -1,4 +1,4 @@
-# Voronoi Organizer
+# Mapflowy
 
 Astro + Lit implementation of a full-screen, keyboard-first hierarchical organizer.
 
@@ -9,14 +9,23 @@ npm install
 npm run dev
 ```
 
-Use `npm run check`, `npm test`, and `npm run build` before deploying. Set `PUBLIC_API_BASE_URL` when the authentication backend exists; until then the auth routes remain safe, non-submitting UI shells.
+Use `npm run check`, `npm test`, and `npm run build` before deploying. The organizer is local-first: workspace data is saved to browser `localStorage` and is not synchronized between devices.
+
+## Deploying the static site
+
+Connect the repository to Cloudflare Pages with these settings:
+
+- Build command: `npm run build`
+- Build output directory: `dist`
+
+Choose the production hostname before inviting users. Browser storage is isolated by origin, so data saved on a preview URL or previous domain does not automatically appear on a new domain.
 
 ## Routes
 
 - `/` anonymous-first organizer
 - `/home` public product and OAuth homepage
-- `/login`, `/signup`, `/forgot-password` authentication shells
-- `/privacy`, `/terms` draft legal pages
+- `/login`, `/signup`, `/forgot-password` dormant authentication shells that are not linked from the live UI
+- `/privacy` local-first privacy notice and `/terms` draft terms
 
 ## Future backend
 

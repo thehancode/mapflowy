@@ -1,5 +1,11 @@
 import type { OrganizerNode, TreeEntry, Point, LayoutEntry, RadialTreeLayout } from './types';
 
+export const ELEMENT_TEXT_LIMIT = 4096;
+
+export function normalizeElementText(value: string, fallback = 'Untitled'): string {
+  return (value.trim() || fallback).slice(0, ELEMENT_TEXT_LIMIT);
+}
+
 export function newNodeId(existing: Iterable<string> = []): string {
   const cryptoObject = globalThis.crypto;
   if (cryptoObject?.randomUUID) {
@@ -13,7 +19,7 @@ export function newNodeId(existing: Iterable<string> = []): string {
 }
 
 export function createNode(name = 'Untitled', children: OrganizerNode[] = [], id?: string): OrganizerNode {
-  return { id: id ?? newNodeId(), name: name.trim() || 'Untitled', children: [...children] };
+  return { id: id ?? newNodeId(), name: normalizeElementText(name), children: [...children] };
 }
 
 export function flattenTree(node: OrganizerNode, parent: OrganizerNode | null = null, depth = 0, path: OrganizerNode[] = []): TreeEntry[] {
@@ -55,11 +61,31 @@ export function normalizeNode(value: unknown, ids = new Set<string>()): Organize
   if (ids.has(id)) id = newNodeId(ids);
   ids.add(id);
   const children = Array.isArray(candidate.children) ? candidate.children.map((child) => normalizeNode(child, ids)) : [];
-  return { id, name: candidate.name.trim() || 'Untitled', children };
+  return { id, name: normalizeElementText(candidate.name), children };
 }
 
 export function cloneTree(root: OrganizerNode): OrganizerNode {
   return { id: root.id, name: root.name, children: root.children.map(cloneTree) };
+}
+
+export function collectNodeIds(roots: OrganizerNode[]): Set<string> {
+  return new Set(roots.flatMap((root) => flattenTree(root).map(({ node }) => node.id)));
+}
+
+export function cloneTreeWithFreshIds(root: OrganizerNode, existingIds: Iterable<string> = []): OrganizerNode {
+  const usedIds = new Set(existingIds);
+  const clone = (node: OrganizerNode): OrganizerNode => {
+    const id = newNodeId(usedIds);
+    usedIds.add(id);
+    return { id, name: node.name, children: node.children.map(clone) };
+  };
+  return clone(root);
+}
+
+export function duplicateTree(root: OrganizerNode, workspaceTrees: OrganizerNode[]): OrganizerNode {
+  const duplicate = cloneTreeWithFreshIds(root, collectNodeIds(workspaceTrees));
+  duplicate.name = normalizeElementText(`${root.name} copy`);
+  return duplicate;
 }
 
 export function importGuestAsBranch(accountRoot: OrganizerNode, guestRoot: OrganizerNode): OrganizerNode {

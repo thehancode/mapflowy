@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { flattenTree, importGuestAsBranch, normalizeNode, radialTreeLayout, directionalConnectedCandidates, voronoiPathForSelection } from "./index";
+import { duplicateTree, ELEMENT_TEXT_LIMIT, flattenTree, importGuestAsBranch, normalizeNode, radialTreeLayout, directionalConnectedCandidates, voronoiPathForSelection } from "./index";
 import type { OrganizerNode } from "./types";
 
 const tree = (): OrganizerNode => ({
@@ -17,6 +17,11 @@ describe("organizer tree", () => {
     expect(normalized.children[0].id).not.toBe(normalized.id);
   });
 
+  it("limits each element's stored text to 4096 characters", () => {
+    const normalized = normalizeNode({ id: "long", name: "x".repeat(ELEMENT_TEXT_LIMIT + 100), children: [] });
+    expect(normalized.name).toHaveLength(ELEMENT_TEXT_LIMIT);
+  });
+
   it("imports guest data as a fresh, non-colliding branch", () => {
     const account = tree();
     const branch = importGuestAsBranch(account, tree());
@@ -24,6 +29,15 @@ describe("organizer tree", () => {
     expect(account.children.at(-1)).toBe(branch);
     const ids = flattenTree(account).map(({ node }) => node.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("duplicates a complete tree with fresh IDs", () => {
+    const original = tree();
+    const duplicate = duplicateTree(original, [original]);
+    expect(duplicate.name).toBe("Projects copy");
+    expect(duplicate.children.map(({ name }) => name)).toEqual(["A", "B"]);
+    const originalIds = new Set(flattenTree(original).map(({ node }) => node.id));
+    expect(flattenTree(duplicate).every(({ node }) => !originalIds.has(node.id))).toBe(true);
   });
 
   it("limits radial directional candidates to parent and direct children", () => {

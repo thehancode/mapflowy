@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { circleLayout, polygonArea, viewportEdgeOverlayPath, viewportEdges, voronoiPolygons } from "./geometry";
+import { circleLayout, polygonArea, polygonBottomBand, viewportEdgeOverlayPath, viewportEdges, voronoiPolygons } from "./geometry";
 
 describe("organizer geometry", () => {
   it("places a single item at the center", () => {
@@ -26,5 +26,12 @@ describe("organizer geometry", () => {
       expect(curves(viewportEdgeOverlayPath(polygon, edges, 200, 200, 40, 12))).toBe(5);
     }
     expect(curves(viewportEdgeOverlayPath(polygon, ["top", "right", "bottom", "left"], 200, 200, 40, 12))).toBe(8);
+  });
+
+  it("clips a horizontal add-child band to the bottom of a polygon", () => {
+    const band = polygonBottomBand([{ x: 20, y: 10 }, { x: 180, y: 10 }, { x: 140, y: 150 }, { x: 60, y: 150 }], 40);
+    expect(Math.min(...band.map(({ y }) => y))).toBeCloseTo(110);
+    expect(Math.max(...band.map(({ y }) => y))).toBeCloseTo(150);
+    expect(band.every(({ x, y }) => x >= 20 && x <= 180 && y >= 110)).toBe(true);
   });
 });

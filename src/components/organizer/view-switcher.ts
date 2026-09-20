@@ -1,11 +1,13 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { translate, type OrganizerLanguage } from "../../lib/organizer";
 
 export type OrganizerView = "voronoi" | "tree" | "file";
 
 @customElement("view-switcher")
 export class ViewSwitcher extends LitElement {
   @property({ reflect: true }) view: OrganizerView = "voronoi";
+  @property({ reflect: true }) language: OrganizerLanguage = "en";
 
   static styles = css`
     :host { display: block; }
@@ -22,10 +24,10 @@ export class ViewSwitcher extends LitElement {
   }
 
   render() {
-    return html`<div role="group" aria-label="Display mode">
-      <button aria-pressed=${this.view === "voronoi"} @click=${() => this.choose("voronoi")}>Voronoi</button>
-      <button aria-pressed=${this.view === "tree"} @click=${() => this.choose("tree")}>Tree graph</button>
-      <button aria-pressed=${this.view === "file"} @click=${() => this.choose("file")}>File tree</button>
+    return html`<div role="group" aria-label=${translate(this.language, "displayMode")}>
+      <button aria-pressed=${this.view === "voronoi"} @click=${() => this.choose("voronoi")}>${translate(this.language, "voronoiView")}</button>
+      <button aria-pressed=${this.view === "tree"} @click=${() => this.choose("tree")}>${translate(this.language, "graphView")}</button>
+      <button aria-pressed=${this.view === "file"} @click=${() => this.choose("file")}>${translate(this.language, "treeView")}</button>
     </div>`;
   }
 }

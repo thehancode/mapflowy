@@ -1,15 +1,17 @@
 import { LitElement, css, html, nothing, svg, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import "./view-switcher";
-import type { OrganizerNode, Point, LayoutEntry, OrganizerTheme } from "../../lib/organizer";
+import type { OrganizerLanguage, OrganizerNode, OrganizerWorkspaceDocument, Point, LayoutEntry, OrganizerTheme, TranslationKey } from "../../lib/organizer";
 import {
-  circleLayout, createRepository, createUserConfigRepository, findEntry, flattenTree, fitLabel, newNodeId,
-  polygonArea, polygonCentroid, radialLinkPath, radialTreeLayout, roundedPolygonPath, visibleItems,
-  viewportEdgeBand, viewportEdgeOverlayPath, viewportEdges, viewportEdgeSpan, voronoiPathForSelection, voronoiPolygons,
+  circleLayout, collectNodeIds, createRepository, createTutorialTree, createUserConfigRepository, duplicateTree, ELEMENT_TEXT_LIMIT, findEntry, flattenTree, fitLabel, newNodeId, normalizeElementText,
+  polygonArea, polygonBottomBand, polygonCentroid, radialLinkPath, radialTreeLayout, roundedPolygonPath, visibleItems,
+  translate, viewportEdgeBand, viewportEdgeOverlayPath, viewportEdges, viewportEdgeSpan, voronoiPathForSelection, voronoiPolygons,
 } from "../../lib/organizer";
 import type { OrganizerView } from "./view-switcher";
 
 const palette = ["#f38b70", "#efc65d", "#71c1b2", "#88afe0", "#b99bdf", "#df9eb6", "#9fc477", "#e5a665"];
+const initialRoot: OrganizerNode = { id: "node-1", name: "Projects", children: [] };
+type ContextMenuState = { kind: "element" | "tree"; id: string; x: number; y: number };
 const directions: Record<string, Point> = {
   ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 },
   ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 },
@@ -24,18 +26,28 @@ function hashString(value: string): number {
 @customElement("organizer-app")
 export class OrganizerApp extends LitElement {
   private readonly configRepository = createUserConfigRepository();
-  @property({ reflect: true }) theme: OrganizerTheme = this.configRepository.load().theme;
-  @state() private root: OrganizerNode = { id: "node-1", name: "Projects", children: [] };
+  private readonly initialConfig = this.configRepository.load();
+  @property({ reflect: true }) theme: OrganizerTheme = this.initialConfig.theme;
+  @property({ reflect: true }) language: OrganizerLanguage = this.initialConfig.language;
+  @state() private workspace: OrganizerWorkspaceDocument = { version: 2, activeTreeId: initialRoot.id, trees: [initialRoot] };
+  @state() private tutorialOpen = false;
+  @state() private tutorialRoot = createTutorialTree(this.language);
   @state() private path: OrganizerNode[] = [this.root];
   @state() private selectedId = this.root.id;
-  @state() private view: OrganizerView = "voronoi";
-  @state() private status = "Loading your organizer…";
+  @state() private view: OrganizerView = "tree";
+  @state() private status = translate(this.initialConfig.language, "loading");
   @state() private width = 1200;
   @state() private height = 720;
   @state() private draft: { id: string; parentId: string; restoreId: string; mode: "create" | "edit" } | null = null;
+  @state() private sidebarOpen = false;
+  @state() private editingTreeId: string | null = null;
+  @state() private contextMenu: ContextMenuState | null = null;
+  @state() private toast = "";
+  @state() private storageSaveFailed = false;
   private readonly repository = createRepository();
   private resizeObserver?: ResizeObserver;
   private treeCycles = new Map<string, number>();
+  private toastTimer?: number;
 
   static styles = css`
     :host { --ink: #171a17; --background: #e8e7de; --file-background: #f4f3ec; --panel: rgba(250,249,244,.88); --panel-border: rgba(23,26,23,.13); --shadow: rgba(23,26,23,.12); --muted: #686a63; --cell-gap: #faf9f4; --edge-overlay: rgba(255,255,255,.24); --edge-overlay-hover: rgba(255,255,255,.5); --row-hover: rgba(255,255,255,.58); --row-selected: #fff; --editor: rgba(255,255,255,.96); --dialog: #faf9f4; --kbd: #fff; display: block; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; color: var(--ink); background: var(--background); color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -47,20 +59,41 @@ export class OrganizerApp extends LitElement {
     .stage.file { overflow: auto; background: var(--file-background); }
     svg { display: block; width: 100%; height: 100%; }
     .topbar { position: absolute; z-index: 10; top: 1rem; left: 1rem; right: 1rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; pointer-events: none; }
+    .location-controls { display: flex; flex-direction: column; align-items: flex-start; gap: .65rem; pointer-events: none; }
     .crumbs, .top-actions { pointer-events: auto; border: 1px solid var(--panel-border); background: var(--panel); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); }
     .crumbs { display: flex; flex-wrap: wrap; gap: .42rem; max-width: min(64vw, 760px); padding: .65rem .85rem; border-radius: 14px; font-size: .8rem; font-weight: 740; }
-    .crumbs span:not(:last-child) { color: var(--muted); font-weight: 560; }
+    .crumb { min-width: 0; max-width: min(28vw, 260px); overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--muted); font-weight: 560; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; }
+    .crumb[aria-current="location"] { color: var(--ink); font-weight: 740; }
+    .crumb:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
     .separator { opacity: .45; }
     .top-actions { display: flex; gap: .25rem; padding: .25rem; border-radius: 999px; }
     .top-actions a, .top-actions button { min-height: 2.25rem; display: inline-flex; align-items: center; padding: 0 .78rem; border: 0; border-radius: 999px; background: transparent; color: var(--ink); text-decoration: none; font-size: .75rem; font-weight: 750; cursor: pointer; }
     .top-actions a { background: var(--ink); color: var(--background); }
-    .switcher { position: absolute; z-index: 10; left: 50%; bottom: 1rem; transform: translateX(-50%); }
+    .icon-button { width: 2.25rem; justify-content: center; padding: 0 !important; }
+    .language-toggle { min-width: 2.5rem; justify-content: center; padding: 0 .55rem !important; }
+    .icon-button svg, .context-toolbar svg, .sidebar-toggle svg, .back-button svg, .add-tree svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    .switcher { position: absolute; z-index: 10; top: 1rem; left: 50%; transform: translateX(-50%); }
+    .sidebar-toggle { position: absolute; z-index: 12; left: 1rem; bottom: 1rem; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); cursor: pointer; }
+    .back-button { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); pointer-events: auto; cursor: pointer; }
+    .tree-sidebar { position: absolute; z-index: 11; left: 1rem; bottom: 4.5rem; display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
+    .tree-sidebar h2 { margin: 0; padding: 1rem 1rem .55rem; font-size: .82rem; }
+    .tree-list { min-height: 0; overflow-y: auto; padding: .2rem .55rem .65rem; }
+    .tree-row { display: flex; align-items: center; width: 100%; min-height: 42px; padding: .35rem .55rem; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; }
+    .tree-row:hover { background: var(--row-hover); }
+    .tree-row.active { border-color: var(--panel-border); background: var(--row-selected); }
+    .tree-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; font-weight: 720; }
+    .tree-name-input { width: 100%; min-height: 32px; padding: 0 .5rem; border: 1px solid var(--panel-border); border-radius: 7px; background: var(--editor); color: var(--ink); outline: 0; font-weight: 700; }
+    .tree-sidebar-footer { display: grid; gap: .45rem; padding: .65rem; border-top: 1px solid var(--panel-border); }
+    .add-tree, .tutorial-tree { display: grid; place-items: center; width: 100%; min-height: 40px; border: 1px solid var(--panel-border); border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; }
+    .tutorial-tree.active, .tutorial-tree:hover, .add-tree:hover { background: var(--row-hover); }
+    .context-toolbar { position: fixed; z-index: 40; display: flex; gap: .2rem; padding: .3rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--ink); box-shadow: 0 14px 40px var(--shadow); backdrop-filter: blur(18px); }
+    .context-toolbar button { display: grid; place-items: center; width: 2.35rem; height: 2.35rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+    .context-toolbar button:hover { background: var(--row-hover); }
     .cell { cursor: default; }
     .cell-shape { transition: filter .14s ease; }
     .cell:hover .cell-shape { filter: brightness(.97) saturate(1.05); }
     .cell-outline { fill: none; stroke: var(--cell-gap); stroke-width: 12; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
     .cell-label { fill: var(--ink); font-weight: 760; text-anchor: middle; cursor: text; user-select: none; paint-order: stroke; stroke: var(--cell-gap); stroke-width: 3px; stroke-linejoin: round; }
-    .dot { fill: color-mix(in srgb, var(--ink) 48%, transparent); pointer-events: none; }
     .selection { fill: none; stroke: var(--ink); stroke-width: 20; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
     .edge-bands { cursor: cell; outline: none; }
     .edge-strip { fill: var(--edge-overlay); stroke: none; transition: fill .14s ease; }
@@ -71,29 +104,40 @@ export class OrganizerApp extends LitElement {
     .tree-node .core { stroke: var(--cell-gap); stroke-width: 4; vector-effect: non-scaling-stroke; }
     .tree-node.current .core { stroke: var(--ink); stroke-width: 5; }
     .tree-node text { fill: var(--ink); font-size: 12px; font-weight: 750; text-anchor: middle; paint-order: stroke; stroke: var(--background); stroke-width: 3px; pointer-events: none; }
-    .add-ring { fill: none; stroke: var(--ink); stroke-width: 4; opacity: .12; cursor: crosshair; vector-effect: non-scaling-stroke; }
+    .add-ring { fill: none; stroke: var(--ink); stroke-width: 8; opacity: .12; cursor: crosshair; vector-effect: non-scaling-stroke; }
     .add-ring:hover { opacity: .65; }
     .file-tree { min-height: 100%; padding: 5.6rem 1.1rem 5.5rem; }
     .file-row { display: flex; align-items: center; min-height: 44px; margin-left: calc(var(--depth) * 28px); padding: .35rem .65rem; border: 1px solid transparent; border-radius: 9px; cursor: pointer; }
     .file-row:hover { background: var(--row-hover); }
-    .file-row.selected { border-color: var(--panel-border); background: var(--row-selected); box-shadow: 0 3px 12px var(--shadow); }
-    .branch { width: 20px; color: #eb4d28; }
-    .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; font-weight: 680; }
-    .meta { margin-left: auto; padding-left: 1rem; color: var(--muted); font-size: .7rem; }
+    .file-row.selected { align-items: flex-start; border-color: var(--panel-border); background: var(--row-selected); box-shadow: 0 3px 12px var(--shadow); }
+    .branch { flex: 0 0 20px; width: 20px; color: #eb4d28; }
+    .name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; font-weight: 680; }
+    .file-row.selected .name { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: pre-wrap; }
+    .meta { flex: 0 0 auto; margin-left: auto; padding-left: 1rem; color: var(--muted); font-size: .7rem; }
     .editor { position: absolute; z-index: 20; width: min(280px, 70vw); height: 44px; padding: 0 .75rem; border: 2px solid var(--ink); border-radius: 10px; outline: 0; background: var(--editor); color: var(--ink); font-weight: 700; text-align: center; box-shadow: 0 7px 24px var(--shadow); transform: translate(-50%, -50%); }
     .file-editor { width: min(360px, calc(100% - 30px)); height: 32px; padding: 0 .55rem; border: 2px solid var(--ink); border-radius: 6px; outline: 0; background: var(--editor); color: var(--ink); font-weight: 700; }
+    .toast { position: fixed; z-index: 60; left: 50%; bottom: 1.25rem; max-width: calc(100vw - 2rem); padding: .7rem 1rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--ink); color: var(--background); box-shadow: 0 12px 36px var(--shadow); font-size: .82rem; font-weight: 750; transform: translateX(-50%); }
+    .toast.raised { bottom: 6rem; }
+    .storage-note { position: absolute; z-index: 9; right: 1rem; bottom: 1rem; padding: .55rem .75rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .7rem; font-weight: 700; }
+    .save-error { position: fixed; z-index: 55; left: 50%; bottom: 1rem; width: min(560px, calc(100vw - 2rem)); padding: .8rem 1rem; border: 1px solid #8f2f21; border-radius: 12px; background: #fff1ed; color: #702317; box-shadow: 0 12px 36px var(--shadow); font-size: .8rem; font-weight: 720; line-height: 1.4; text-align: center; transform: translateX(-50%); }
+    :host([theme="dark"]) .save-error { border-color: #e7806d; background: #3a201b; color: #ffd9d1; }
     dialog { width: min(460px, calc(100% - 2rem)); border: 1px solid var(--panel-border); border-radius: 18px; padding: 1.2rem; background: var(--dialog); color: var(--ink); box-shadow: 0 30px 90px var(--shadow); }
     dialog::backdrop { background: rgba(23,26,23,.38); backdrop-filter: blur(4px); }
     dialog h2 { margin: 0 0 .5rem; }
     dialog ul { padding-left: 1.2rem; line-height: 1.8; color: var(--muted); }
+    dialog .shortcut-section { margin-top: .65rem; color: var(--ink); font-weight: 800; list-style: none; }
     dialog button { min-height: 2.5rem; padding: 0 1rem; border: 0; border-radius: 9px; background: var(--ink); color: var(--background); font-weight: 750; cursor: pointer; }
     kbd { padding: .15rem .38rem; border: 1px solid var(--panel-border); border-bottom-width: 2px; border-radius: 5px; background: var(--kbd); font: 700 .72rem system-ui; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     :focus-visible { outline: 2px solid #eb4d28; outline-offset: 2px; }
     @media (max-width: 600px) {
       .topbar { top: .65rem; left: .65rem; right: .65rem; }
-      .crumbs { max-width: calc(100vw - 9.5rem); }
-      .top-actions button:not(.theme-toggle) { display: none; }
+      .switcher { top: 4.15rem; }
+      .crumbs { max-width: calc(100vw - 11.5rem); }
+      .sidebar-toggle { left: .65rem; bottom: .65rem; }
+      .storage-note { right: .65rem; bottom: .65rem; }
+      .tree-sidebar { left: .65rem; bottom: 4rem; width: min(310px, calc(100vw - 1.3rem)); }
+      .file-tree { padding-top: 8.2rem; }
       .file-row { margin-left: calc(var(--depth) * 18px); }
       .tree-node text { font-size: 10px; }
     }
@@ -108,6 +152,7 @@ export class OrganizerApp extends LitElement {
   disconnectedCallback(): void {
     document.removeEventListener("keydown", this.onKeyDown);
     this.resizeObserver?.disconnect();
+    if (this.toastTimer) window.clearTimeout(this.toastTimer);
     super.disconnectedCallback();
   }
 
@@ -127,44 +172,212 @@ export class OrganizerApp extends LitElement {
       input?.focus();
       if (this.draft?.mode === "edit") input?.select();
     });
+    if (changed.has("editingTreeId") && this.editingTreeId) requestAnimationFrame(() => {
+      const input = this.renderRoot.querySelector<HTMLInputElement>("[data-tree-edit]");
+      input?.focus(); input?.select();
+    });
+    if (changed.has("contextMenu") && this.contextMenu) requestAnimationFrame(() => {
+      this.renderRoot.querySelector<HTMLButtonElement>(".context-toolbar button")?.focus();
+    });
   }
 
+  private get root(): OrganizerNode { return this.tutorialOpen ? this.tutorialRoot : this.workspace.trees.find(({ id }) => id === this.workspace.activeTreeId) ?? this.workspace.trees[0]; }
   private get current(): OrganizerNode { return this.path[this.path.length - 1]; }
+  private t(key: TranslationKey, values: Record<string, string | number> = {}): string { return translate(this.language, key, values); }
   private setStatus(message: string): void { this.status = message; }
+
+  private showToast(message: string): void {
+    this.toast = message;
+    if (this.toastTimer) window.clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => { this.toast = ""; }, 2200);
+  }
 
   private toggleTheme(): void {
     this.theme = this.theme === "dark" ? "light" : "dark";
-    this.configRepository.save({ version: 1, theme: this.theme });
-    this.setStatus(`${this.theme === "dark" ? "Dark" : "Light"} mode enabled.`);
+    this.configRepository.save({ version: 2, theme: this.theme, language: this.language });
+    this.setStatus(this.t(this.theme === "dark" ? "darkEnabled" : "lightEnabled"));
+  }
+
+  private setLanguage(language: OrganizerLanguage): void {
+    if (language === this.language) return;
+    this.language = language;
+    if (this.tutorialOpen) {
+      this.tutorialRoot = createTutorialTree(language);
+      this.path = findEntry(this.tutorialRoot, this.selectedId)?.path ?? [this.tutorialRoot];
+    }
+    this.toast = "";
+    this.configRepository.save({ version: 2, theme: this.theme, language });
+    this.setStatus(translate(language, language === "es" ? "languageSpanishEnabled" : "languageEnglishEnabled"));
   }
 
   private async load(): Promise<void> {
-    this.root = await this.repository.load();
+    this.workspace = await this.repository.load();
+    this.tutorialOpen = false;
     this.path = [this.root]; this.selectedId = this.root.id; this.treeCycles.clear();
-    this.setStatus("Sample project tree loaded. Press ? for keyboard help.");
+    this.setStatus(this.t("loaded", { name: this.root.name }));
   }
 
-  private persist(): void { this.repository.save(this.root); this.requestUpdate(); }
+  private persist(): void {
+    const saved = this.repository.save(this.workspace);
+    this.storageSaveFailed = !saved;
+    this.requestUpdate();
+  }
 
-  private select(id: string): void { this.selectedId = id; this.setStatus(`${findEntry(this.root, id)?.node.name ?? "Element"} is selected.`); }
+  private resetToRoot(message: string): void {
+    this.path = [this.root]; this.selectedId = this.root.id; this.draft = null; this.contextMenu = null; this.treeCycles.clear();
+    this.setStatus(message);
+  }
+
+  private switchTree(id: string): void {
+    if (this.tutorialOpen) this.tutorialOpen = false;
+    if (id === this.workspace.activeTreeId) { this.resetToRoot(this.t("opened", { name: this.root.name })); return; }
+    if (this.draft) this.cancelDraft();
+    const tree = this.workspace.trees.find((candidate) => candidate.id === id);
+    if (!tree) return;
+    this.workspace = { ...this.workspace, activeTreeId: id };
+    this.editingTreeId = null;
+    this.resetToRoot(this.t("opened", { name: tree.name }));
+    this.persist();
+  }
+
+  private createTree(): void {
+    if (this.draft) this.cancelDraft();
+    this.tutorialOpen = false;
+    const id = newNodeId(collectNodeIds(this.workspace.trees));
+    const tree: OrganizerNode = { id, name: this.t("untitledTree"), children: [] };
+    this.workspace = { version: 2, activeTreeId: id, trees: [...this.workspace.trees, tree] };
+    this.sidebarOpen = true; this.editingTreeId = id;
+    this.resetToRoot(this.t("newTreeReady"));
+    this.persist();
+  }
+
+  private openTutorial(): void {
+    if (this.draft) this.cancelDraft();
+    this.tutorialRoot = createTutorialTree(this.language);
+    this.tutorialOpen = true;
+    this.editingTreeId = null;
+    this.resetToRoot(this.t("tutorialOpened"));
+  }
+
+  private beginTreeRename(id: string): void {
+    this.contextMenu = null; this.sidebarOpen = true; this.editingTreeId = id;
+  }
+
+  private commitTreeRename(input: HTMLInputElement, id: string): void {
+    if (this.editingTreeId !== id) return;
+    const tree = this.workspace.trees.find((candidate) => candidate.id === id);
+    if (!tree) { this.editingTreeId = null; return; }
+    const name = normalizeElementText(input.value, "");
+    if (name) tree.name = name;
+    this.editingTreeId = null; this.persist(); this.setStatus(this.t("renamed", { name: tree.name }));
+  }
+
+  private treeRenameKey(event: KeyboardEvent, id: string): void {
+    event.stopPropagation();
+    if (event.key === "Enter") { event.preventDefault(); this.commitTreeRename(event.currentTarget as HTMLInputElement, id); }
+    if (event.key === "Escape") { event.preventDefault(); this.editingTreeId = null; }
+  }
+
+  private duplicateWorkspaceTree(id: string): void {
+    const index = this.workspace.trees.findIndex((tree) => tree.id === id);
+    if (index < 0) return;
+    const duplicate = duplicateTree(this.workspace.trees[index], this.workspace.trees);
+    const trees = [...this.workspace.trees]; trees.splice(index + 1, 0, duplicate);
+    this.workspace = { version: 2, activeTreeId: duplicate.id, trees };
+    this.editingTreeId = null; this.resetToRoot(this.t("created", { name: duplicate.name })); this.persist();
+  }
+
+  private downloadTree(root: OrganizerNode): void {
+    const blob = new Blob([this.repository.exportJson(root)], { type: "application/json" });
+    const url = URL.createObjectURL(blob), link = document.createElement("a");
+    const filename = root.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "organizer";
+    link.href = url; link.download = `${filename}.json`; link.click(); URL.revokeObjectURL(url);
+    this.contextMenu = null; this.setStatus(this.t("exported", { name: root.name }));
+  }
+
+  private async copyElementName(id: string): Promise<void> {
+    const node = findEntry(this.root, id)?.node;
+    this.contextMenu = null;
+    if (!node) return;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(node.name);
+      this.setStatus(this.t("copied"));
+      this.showToast(this.t("copiedToast"));
+    } catch {
+      this.setStatus(this.t("copyFailed"));
+      this.showToast(this.t("copyFailedToast"));
+    }
+  }
+
+  private deleteElement(id: string): void {
+    if (this.tutorialOpen) { this.contextMenu = null; this.setStatus(this.t("tutorialReadOnly")); return; }
+    const entry = findEntry(this.root, id);
+    this.contextMenu = null;
+    if (!entry?.parent) { this.setStatus(this.t("removeRoot")); return; }
+    const name = entry.node.name;
+    entry.parent.children = entry.parent.children.filter((node) => node.id !== id);
+    const parent = findEntry(this.root, entry.parent.id)!;
+    this.path = parent.path; this.selectedId = parent.node.id; this.treeCycles.clear(); this.persist();
+    this.setStatus(this.t("removed", { name }));
+  }
+
+  private contextPosition(x: number, y: number, kind: ContextMenuState["kind"]): Pick<ContextMenuState, "x" | "y"> {
+    const menuWidth = kind === "tree" ? 150 : 104, menuHeight = 48, margin = 8;
+    return { x: Math.max(margin, Math.min(x, window.innerWidth - menuWidth - margin)), y: Math.max(margin, Math.min(y, window.innerHeight - menuHeight - margin)) };
+  }
+
+  private openContextMenu(event: MouseEvent, kind: ContextMenuState["kind"], id: string): void {
+    event.preventDefault(); event.stopPropagation();
+    if (this.draft) return;
+    if (kind === "element") this.selectedId = id;
+    this.contextMenu = { kind, id, ...this.contextPosition(event.clientX, event.clientY, kind) };
+  }
+
+  private openKeyboardElementMenu(): void {
+    const target = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-node-id]")).find((element) => element.dataset.nodeId === this.selectedId);
+    const bounds = target?.getBoundingClientRect();
+    const x = bounds ? bounds.left + bounds.width / 2 : window.innerWidth / 2;
+    const y = bounds ? bounds.top + bounds.height / 2 : window.innerHeight / 2;
+    this.contextMenu = { kind: "element", id: this.selectedId, ...this.contextPosition(x, y, "element") };
+  }
+
+  private treeRowKey(event: KeyboardEvent, id: string): void {
+    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.switchTree(id); return; }
+    if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+    event.preventDefault(); event.stopPropagation();
+    const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.contextMenu = { kind: "tree", id, ...this.contextPosition(bounds.right, bounds.top + bounds.height / 2, "tree") };
+  }
+
+  private workspacePointerDown(event: PointerEvent): void {
+    const path = event.composedPath();
+    const includesClass = (...classNames: string[]) => path.some((target) => target instanceof Element && classNames.some((className) => target.classList.contains(className)));
+    if (this.contextMenu && !includesClass("context-toolbar")) this.contextMenu = null;
+    if (this.sidebarOpen && !includesClass("tree-sidebar", "sidebar-toggle")) this.sidebarOpen = false;
+  }
+
+  private select(id: string): void { const name = findEntry(this.root, id)?.node.name ?? this.t("element"); this.selectedId = id; this.setStatus(this.t("elementSelected", { name })); }
 
   private chooseView(view: OrganizerView): void {
     if (this.draft) this.cancelDraft();
+    this.contextMenu = null;
     if (view === "voronoi" && this.view !== "voronoi") {
       this.path = voronoiPathForSelection(this.root, this.selectedId);
     }
     this.view = view;
-    this.setStatus(view === "tree" ? "Complete tree view." : view === "file" ? "File tree ready. Enter adds a sibling; Tab indents." : `${this.current.name} level.`);
+    this.setStatus(view === "tree" ? this.t("completeGraphView") : view === "file" ? this.t("treeViewReady") : this.t("currentLevel", { name: this.current.name }));
     this.renderRoot.querySelector<HTMLElement>(".workspace")?.focus();
   }
 
   private beginDraft(parent: OrganizerNode, restoreId = parent.id, insertionIndex = parent.children.length): void {
+    if (this.tutorialOpen) { this.setStatus(this.t("tutorialReadOnly")); return; }
     if (this.draft) return;
     const item = { id: newNodeId(flattenTree(this.root).map(({ node }) => node.id)), name: "", children: [] };
     parent.children.splice(insertionIndex, 0, item);
     this.draft = { id: item.id, parentId: parent.id, restoreId, mode: "create" };
     this.selectedId = item.id; this.treeCycles.clear(); this.requestUpdate();
-    this.setStatus("New element ready. Type a name and press Enter.");
+    this.setStatus(this.t("newElementReady"));
   }
 
   private beginFileDraft(child: boolean): void {
@@ -174,6 +387,7 @@ export class OrganizerApp extends LitElement {
   }
 
   private beginEdit(id = this.selectedId): void {
+    if (this.tutorialOpen) { this.setStatus(this.t("tutorialReadOnly")); return; }
     if (this.draft) return;
     const selected = findEntry(this.root, id);
     if (!selected) return;
@@ -185,12 +399,12 @@ export class OrganizerApp extends LitElement {
       mode: "edit",
     };
     this.requestUpdate();
-    this.setStatus(`Editing ${selected.node.name}. Type a name and press Enter.`);
+    this.setStatus(this.t("editing", { name: selected.node.name }));
   }
 
   private commitDraft(input: HTMLInputElement): void {
     if (!this.draft) return;
-    const name = input.value.trim();
+    const name = normalizeElementText(input.value, "");
     if (!name) { this.cancelDraft(); return; }
     const item = findEntry(this.root, this.draft.id)?.node;
     if (!item) { this.cancelDraft(); return; }
@@ -198,19 +412,19 @@ export class OrganizerApp extends LitElement {
     item.name = name; const id = item.id; this.draft = null; this.selectedId = id;
     const entry = findEntry(this.root, id)!;
     if (this.view !== "voronoi") this.path = entry.path;
-    this.persist(); this.setStatus(mode === "edit" ? `${name} was renamed.` : `${name} was created.`);
+    this.persist(); this.setStatus(this.t(mode === "edit" ? "renamed" : "created", { name }));
   }
 
   private cancelDraft(): void {
     if (!this.draft) return;
     const { id, parentId, restoreId, mode } = this.draft;
     if (mode === "edit") {
-      this.draft = null; this.requestUpdate(); this.setStatus("Edit cancelled."); return;
+      this.draft = null; this.requestUpdate(); this.setStatus(this.t("editCancelled")); return;
     }
     const parent = findEntry(this.root, parentId)?.node;
     if (parent) parent.children = parent.children.filter((child) => child.id !== id);
     this.draft = null; const restored = findEntry(this.root, restoreId) ?? findEntry(this.root, parentId)!;
-    this.path = restored.path; this.selectedId = restored.node.id; this.requestUpdate(); this.setStatus("New element cancelled.");
+    this.path = restored.path; this.selectedId = restored.node.id; this.requestUpdate(); this.setStatus(this.t("newElementCancelled"));
   }
 
   private draftKey(event: KeyboardEvent): void {
@@ -219,43 +433,27 @@ export class OrganizerApp extends LitElement {
     if (event.key === "Escape") { event.preventDefault(); this.cancelDraft(); }
   }
 
-  private deleteVoronoi(): void {
-    if (this.selectedId === this.current.id) { this.setStatus("The current level cannot be removed here."); return; }
-    const index = this.current.children.findIndex((node) => node.id === this.selectedId);
-    if (index < 0) return;
-    const [removed] = this.current.children.splice(index, 1);
-    this.selectedId = this.current.children[index]?.id ?? this.current.children[index - 1]?.id ?? this.current.id;
-    this.treeCycles.clear(); this.persist(); this.setStatus(`${removed.name} and its nested elements were removed.`);
-  }
-
-  private deleteFile(): void {
-    const selected = findEntry(this.root, this.selectedId);
-    if (!selected?.parent) { this.setStatus("The root element cannot be removed."); return; }
-    selected.parent.children = selected.parent.children.filter((node) => node.id !== selected.node.id);
-    const parent = findEntry(this.root, selected.parent.id)!;
-    this.path = parent.path; this.selectedId = parent.node.id; this.treeCycles.clear(); this.persist();
-    this.setStatus(`${selected.node.name} and its nested elements were removed.`);
-  }
-
   private indentFile(): void {
+    if (this.tutorialOpen) { this.setStatus(this.t("tutorialReadOnly")); return; }
     const selected = findEntry(this.root, this.selectedId);
-    if (!selected?.parent || selected.index <= 0) { this.setStatus("This element has no previous sibling to become its parent."); return; }
+    if (!selected?.parent || selected.index <= 0) { this.setStatus(this.t("noPreviousSibling")); return; }
     const siblings = selected.parent.children; const newParent = siblings[selected.index - 1];
     siblings.splice(selected.index, 1); newParent.children.push(selected.node);
     this.path = findEntry(this.root, selected.node.id)!.path; this.treeCycles.clear(); this.persist();
-    this.setStatus(`${selected.node.name} is now a child of ${newParent.name}.`);
+    this.setStatus(this.t("nowChildOf", { name: selected.node.name, parent: newParent.name }));
   }
 
   private outdentFile(): void {
+    if (this.tutorialOpen) { this.setStatus(this.t("tutorialReadOnly")); return; }
     const selected = findEntry(this.root, this.selectedId);
-    if (!selected?.parent) { this.setStatus("The root cannot be moved up."); return; }
+    if (!selected?.parent) { this.setStatus(this.t("rootCannotMove")); return; }
     const parentEntry = findEntry(this.root, selected.parent.id);
-    if (!parentEntry?.parent) { this.setStatus(`${selected.node.name} is already at the first level.`); return; }
+    if (!parentEntry?.parent) { this.setStatus(this.t("alreadyFirstLevel", { name: selected.node.name })); return; }
     selected.parent.children.splice(selected.index, 1);
     const parentIndex = parentEntry.parent.children.findIndex((node) => node.id === parentEntry.node.id);
     parentEntry.parent.children.splice(parentIndex + 1, 0, selected.node);
     this.path = findEntry(this.root, selected.node.id)!.path; this.treeCycles.clear(); this.persist();
-    this.setStatus(`${selected.node.name} moved up one level.`);
+    this.setStatus(this.t("movedUp", { name: selected.node.name }));
   }
 
   private moveVoronoi(key: string): void {
@@ -287,7 +485,7 @@ export class OrganizerApp extends LitElement {
     const cycleKey = `${selected.node.id}:${key}`, cycle = (this.treeCycles.get(cycleKey) ?? 0) % candidates.length;
     this.treeCycles.set(cycleKey, (cycle + 1) % candidates.length);
     const next = candidates[cycle].entry; this.path = next.path; this.selectedId = next.node.id;
-    this.setStatus(`${next.node.name} is now the current node.${candidates.length > 1 ? ` Connected choice ${cycle + 1} of ${candidates.length}.` : ""}`);
+    this.setStatus(this.t("currentNode", { name: next.node.name }) + (candidates.length > 1 ? this.t("connectedChoice", { current: cycle + 1, total: candidates.length }) : ""));
   }
 
   private moveFile(key: string): void {
@@ -299,18 +497,19 @@ export class OrganizerApp extends LitElement {
 
   private onKeyDown = (event: KeyboardEvent): void => {
     const target = event.composedPath()[0];
-    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
     if (!this.isConnected) return;
+    if (event.key === "Escape" && this.contextMenu) { event.preventDefault(); this.contextMenu = null; return; }
+    if (event.key === "Escape" && this.sidebarOpen) { event.preventDefault(); this.sidebarOpen = false; return; }
+    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); this.openKeyboardElementMenu(); return; }
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === "?") { event.preventDefault(); this.openHelp(); return; }
-    if (event.key.toLowerCase() === "g") { event.preventDefault(); this.chooseView(this.view === "tree" ? "voronoi" : "tree"); return; }
-    if (event.key.toLowerCase() === "f") { event.preventDefault(); this.chooseView("file"); return; }
     if (event.key.toLowerCase() === "e") { event.preventDefault(); this.beginEdit(); return; }
     if (this.view === "file") {
       if (event.key === "Tab") { event.preventDefault(); event.shiftKey ? this.outdentFile() : this.indentFile(); }
       else if (event.key === "Enter") { event.preventDefault(); this.beginFileDraft(false); }
       else if (event.key.toLowerCase() === "n") { event.preventDefault(); this.beginFileDraft(true); }
       else if (event.key in directions) { event.preventDefault(); this.moveFile(event.key); }
-      else if (event.key === "Delete") { event.preventDefault(); this.deleteFile(); }
       return;
     }
     if (this.view === "tree") {
@@ -322,13 +521,12 @@ export class OrganizerApp extends LitElement {
     else if (event.key in directions) { event.preventDefault(); this.moveVoronoi(event.key); }
     else if (event.key === "Enter" && event.shiftKey) { event.preventDefault(); this.goBack(); }
     else if (event.key === "Enter") { event.preventDefault(); this.openSelected(); }
-    else if (event.key === "Delete") { event.preventDefault(); this.deleteVoronoi(); }
   };
 
   private openSelected(): void {
-    if (this.selectedId === this.current.id) { this.setStatus(`${this.current.name} is already the current level.`); return; }
+    if (this.selectedId === this.current.id) { this.setStatus(this.t("alreadyCurrent", { name: this.current.name })); return; }
     const child = this.current.children.find((node) => node.id === this.selectedId);
-    if (child) { this.path = [...this.path, child]; this.selectedId = child.id; this.setStatus(`${child.name} opened.`); }
+    if (child) { this.path = [...this.path, child]; this.selectedId = child.id; this.setStatus(this.t("opened", { name: child.name })); }
   }
 
   private openVoronoiNode(node: OrganizerNode): void {
@@ -336,7 +534,7 @@ export class OrganizerApp extends LitElement {
     const entry = findEntry(this.root, node.id);
     if (!entry) return;
     this.path = entry.path; this.selectedId = node.id;
-    this.setStatus(`${node.name} opened.`);
+    this.setStatus(this.t("opened", { name: node.name }));
   }
 
   private openVoronoiNodeAndAddChild(node: OrganizerNode): void {
@@ -348,17 +546,26 @@ export class OrganizerApp extends LitElement {
   }
 
   private goBack(): void {
-    if (this.path.length === 1) { this.setStatus("Projects is the top level."); return; }
-    const leaving = this.current; this.path = this.path.slice(0, -1); this.selectedId = leaving.id; this.setStatus(`Returned to ${this.current.name}.`);
+    if (this.path.length === 1) { this.setStatus(this.t("topLevel", { name: this.root.name })); return; }
+    const leaving = this.current; this.path = this.path.slice(0, -1); this.selectedId = leaving.id; this.setStatus(this.t("returnedTo", { name: this.current.name }));
   }
 
-  private chooseTreeNode(entry: LayoutEntry): void { this.path = entry.path; this.selectedId = entry.node.id; this.setStatus(`${entry.node.name} is now the current level.`); }
-
-  private download(): void {
-    const blob = new Blob([this.repository.exportJson(this.root)], { type: "application/json" });
-    const url = URL.createObjectURL(blob), link = document.createElement("a");
-    link.href = url; link.download = "organizer.json"; link.click(); URL.revokeObjectURL(url); this.setStatus("Organizer downloaded as organizer.json.");
+  private chooseBreadcrumb(node: OrganizerNode, index: number): void {
+    if (this.draft) this.cancelDraft();
+    this.contextMenu = null;
+    if (this.view === "voronoi") {
+      this.path = this.path.slice(0, index + 1); this.selectedId = node.id;
+      this.setStatus(this.t("opened", { name: node.name }));
+      return;
+    }
+    this.selectedId = node.id; this.setStatus(this.t("elementSelected", { name: node.name }));
+    requestAnimationFrame(() => {
+      const target = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-node-id]")).find((element) => element.dataset.nodeId === node.id);
+      target?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
   }
+
+  private chooseTreeNode(entry: LayoutEntry): void { this.path = entry.path; this.selectedId = entry.node.id; this.setStatus(this.t("nowCurrentLevel", { name: entry.node.name })); }
 
   private openHelp(): void { this.renderRoot.querySelector<HTMLDialogElement>("dialog")?.showModal(); }
 
@@ -366,26 +573,29 @@ export class OrganizerApp extends LitElement {
     const items = visibleItems(this.current), points = circleLayout(items.length);
     const sites = points.map((point, index) => ({ ...point, x: point.x * this.width, y: point.y * this.height, id: items[index].id }));
     const polygons = voronoiPolygons(sites, this.width, this.height);
-    return html`<svg viewBox="0 0 ${this.width} ${this.height}" role="img" aria-label="${this.current.name} level">
+    return html`<svg viewBox="0 0 ${this.width} ${this.height}" role="img" aria-label=${this.t("voronoiLevel", { name: this.current.name })}>
       <defs>${polygons.map((polygon, index) => svg`<clipPath id=${`edge-cell-${index}`} clipPathUnits="userSpaceOnUse"><path d=${roundedPolygonPath(polygon)}></path></clipPath>`)}</defs>
       ${polygons.map((polygon, index) => {
         const item = items[index], center = polygonCentroid(polygon), selected = item.id === this.selectedId;
         const label = fitLabel(item.name, Math.max(80, Math.sqrt(polygonArea(polygon)) * .7));
+        const isParent = item.id === this.current.id;
         const edges = viewportEdges(polygon, this.width, this.height);
-        const edgeSections = edges.map((edge) => ({
+        const edgeSections = this.tutorialOpen || isParent ? [] : edges.map((edge) => ({
           edge,
           band: viewportEdgeBand(polygon, edge, this.width, this.height),
           span: viewportEdgeSpan(polygon, edge, this.width, this.height),
         })).filter(({ band }) => polygonArea(band) >= 1);
         const markerSection = edgeSections.length ? edgeSections.reduce((longest, section) => section.span > longest.span ? section : longest) : undefined;
+        const parentBand = isParent && !this.tutorialOpen ? polygonBottomBand(polygon) : [];
+        const addSectionPath = isParent ? roundedPolygonPath(parentBand, 0) : viewportEdgeOverlayPath(polygon, edges, this.width, this.height);
+        const markerBand = isParent ? parentBand : markerSection?.band;
         const activateEdge = (event: Event) => { event.preventDefault(); event.stopPropagation(); this.openVoronoiNodeAndAddChild(item); };
-        return svg`<g class="cell" role="option" aria-selected=${selected} @click=${() => this.select(item.id)} @dblclick=${() => this.openVoronoiNode(item)}>
+        return svg`<g class="cell" data-node-id=${item.id} role="option" aria-selected=${selected} @click=${() => this.select(item.id)} @dblclick=${() => this.openVoronoiNode(item)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", item.id)}>
           <path class="cell-shape" d=${roundedPolygonPath(polygon)} fill=${palette[hashString(item.id) % palette.length]}></path>
-          <circle class="dot" cx=${sites[index].x} cy=${sites[index].y} r="3"></circle>
-          ${edgeSections.length ? svg`<g class="edge-bands" role="button" tabindex="0" aria-label=${`Open ${item.name} and add a child`} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}><path class="edge-strip" fill-rule="evenodd" d=${viewportEdgeOverlayPath(polygon, edges, this.width, this.height)}></path>${markerSection ? (() => {
-            const marker = polygonCentroid(markerSection.band);
+          ${markerBand && polygonArea(markerBand) >= 1 ? svg`<g class="edge-bands" role="button" tabindex="0" aria-label=${this.t("openAndAddChild", { name: item.name })} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}><path class="edge-strip" fill-rule="evenodd" d=${addSectionPath}></path>${(() => {
+            const marker = polygonCentroid(markerBand);
             return svg`<text class="add-child-sign" x=${marker.x} y=${marker.y} aria-hidden="true">+</text>`;
-          })() : nothing}</g>` : nothing}
+          })()}</g>` : nothing}
           ${selected ? svg`<path class="selection" d=${roundedPolygonPath(polygon)} clip-path=${`url(#edge-cell-${index})`}></path>` : nothing}
           <path class="cell-outline" d=${roundedPolygonPath(polygon)}></path>
           ${item.id !== this.draft?.id ? svg`<text class="cell-label" x=${center.x} y=${center.y} font-size=${label.size} dy=".35em" @dblclick=${(event: MouseEvent) => { event.stopPropagation(); this.beginEdit(item.id); }}>${label.text}</text>` : nothing}
@@ -403,19 +613,20 @@ export class OrganizerApp extends LitElement {
     if (!position) return nothing;
     const editing = this.draft.mode === "edit";
     const value = editing ? findEntry(this.root, this.draft.id)?.node.name ?? "" : "";
-    return html`<input data-draft class="editor" style="left:${position.x}px;top:${position.y}px" maxlength="40" aria-label=${editing ? "Edit element name" : "New element name"} .value=${value} @keydown=${this.draftKey} @blur=${(event: FocusEvent) => this.commitDraft(event.currentTarget as HTMLInputElement)} />`;
+    return html`<input data-draft class="editor" style="left:${position.x}px;top:${position.y}px" maxlength=${ELEMENT_TEXT_LIMIT} aria-label=${this.t(editing ? "editorEdit" : "editorNew")} .value=${value} @keydown=${this.draftKey} @blur=${(event: FocusEvent) => this.commitDraft(event.currentTarget as HTMLInputElement)} />`;
   }
 
   private renderTree() {
     const layout = radialTreeLayout(this.root, this.width, this.height);
-    return html`<svg viewBox="0 0 ${this.width} ${this.height}" role="img" aria-label="Complete project tree">
+    return html`<svg viewBox="0 0 ${this.width} ${this.height}" role="img" aria-label=${this.t("completeProjectGraph")}>
       ${layout.links.map(({ source, target }) => svg`<path class="tree-link" fill="none" d=${radialLinkPath(source, target, layout.centerX, layout.centerY, layout.outerRadiusX, layout.outerRadiusY)}></path>`)}
       ${layout.nodes.map((entry) => {
         const current = entry.node.id === this.current.id, selected = entry.node.id === this.selectedId, radius = entry.depth === 0 ? 24 : 19;
-        return svg`<g class="tree-node ${current ? "current" : ""}" tabindex="0" role="button" aria-label="${entry.node.name}, level ${entry.depth + 1}" transform="translate(${entry.x} ${entry.y})" @click=${() => this.chooseTreeNode(entry)} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") this.chooseTreeNode(entry); }}>
+        return svg`<g class="tree-node ${current ? "current" : ""}" data-node-id=${entry.node.id} tabindex="0" role="button" aria-label=${this.t("nodeLevel", { name: entry.node.name, level: entry.depth + 1 })} transform="translate(${entry.x} ${entry.y})" @click=${() => this.chooseTreeNode(entry)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") this.chooseTreeNode(entry); }}>
+          <title>${entry.node.name}</title>
           <circle class="core" r=${radius} fill=${palette[hashString(entry.node.id) % palette.length]}></circle>
           ${selected ? svg`<circle r=${radius + 4} fill="none" stroke="var(--ink)" stroke-width="2"></circle>` : nothing}
-          <circle class="add-ring" r=${radius + 8} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}></circle>
+          ${this.tutorialOpen ? nothing : svg`<circle class="add-ring" r=${radius + 8} aria-label=${this.t("addChildren")} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}><title>${this.t("addChildren")}</title></circle>`}
           <text y=${entry.depth === 0 ? 39 : 34}>${entry.node.name.length > 22 ? `${entry.node.name.slice(0, 20)}…` : entry.node.name}</text>
         </g>`;
       })}
@@ -423,26 +634,82 @@ export class OrganizerApp extends LitElement {
   }
 
   private renderFileTree() {
-    return html`<div class="file-tree" role="tree" aria-label="Project file tree">${flattenTree(this.root).map((entry) => html`
-      <div class="file-row ${entry.node.id === this.selectedId ? "selected" : ""}" style="--depth:${entry.depth}" role="treeitem" aria-level=${entry.depth + 1} aria-selected=${entry.node.id === this.selectedId} @click=${() => { if (!this.draft) { this.path = entry.path; this.select(entry.node.id); } }}>
+    return html`<div class="file-tree" role="tree" aria-label=${this.t("projectTree")}>${flattenTree(this.root).map((entry) => html`
+      <div class="file-row ${entry.node.id === this.selectedId ? "selected" : ""}" data-node-id=${entry.node.id} style="--depth:${entry.depth}" role="treeitem" aria-level=${entry.depth + 1} aria-selected=${entry.node.id === this.selectedId} @click=${() => { if (!this.draft) { this.path = entry.path; this.select(entry.node.id); } }} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)}>
         <span class="branch" aria-hidden="true">${entry.node.children.length ? "◆" : "·"}</span>
-        ${entry.node.id === this.draft?.id ? html`<input data-draft class="file-editor" maxlength="40" aria-label=${this.draft.mode === "edit" ? "Edit element name" : "New element name"} .value=${this.draft.mode === "edit" ? entry.node.name : ""} @click=${(event: Event) => event.stopPropagation()} @keydown=${this.draftKey} @blur=${(event: FocusEvent) => this.commitDraft(event.currentTarget as HTMLInputElement)} />` : html`<span class="name">${entry.node.name}</span><span class="meta">${entry.node.children.length ? `${entry.node.children.length} child${entry.node.children.length === 1 ? "" : "ren"}` : ""}</span>`}
+        ${entry.node.id === this.draft?.id ? html`<input data-draft class="file-editor" maxlength=${ELEMENT_TEXT_LIMIT} aria-label=${this.t(this.draft.mode === "edit" ? "editorEdit" : "editorNew")} .value=${this.draft.mode === "edit" ? entry.node.name : ""} @click=${(event: Event) => event.stopPropagation()} @keydown=${this.draftKey} @blur=${(event: FocusEvent) => this.commitDraft(event.currentTarget as HTMLInputElement)} />` : html`<span class="name" title=${entry.node.id === this.selectedId ? nothing : entry.node.name}>${entry.node.name}</span><span class="meta">${entry.node.children.length ? this.t(entry.node.children.length === 1 ? "childCountOne" : "childCountMany", { count: entry.node.children.length }) : ""}</span>`}
       </div>`)} </div>`;
   }
 
+  private renderIcon(name: "menu" | "back" | "sun" | "moon" | "help" | "copy" | "trash" | "edit" | "duplicate" | "download" | "plus") {
+    if (name === "menu") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>`;
+    if (name === "back") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6M9 12h10"></path></svg>`;
+    if (name === "sun") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41"></path></svg>`;
+    if (name === "moon") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.2A8.5 8.5 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2Z"></path></svg>`;
+    if (name === "help") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.7 9a2.5 2.5 0 1 1 3.6 2.25c-.8.4-1.3.9-1.3 1.75M12 17h.01"></path></svg>`;
+    if (name === "copy") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>`;
+    if (name === "trash") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path></svg>`;
+    if (name === "edit") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20ZM14.5 7.5l3 3"></path></svg>`;
+    if (name === "duplicate") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2M13.5 11v5M11 13.5h5"></path></svg>`;
+    if (name === "download") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"></path></svg>`;
+    return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>`;
+  }
+
+  private renderSidebar() {
+    if (!this.sidebarOpen) return nothing;
+    return html`<aside class="tree-sidebar" aria-label=${this.t("treeList")}>
+      <h2>${this.t("treeList")}</h2>
+      <div class="tree-list">${this.workspace.trees.map((tree) => html`
+        <div class="tree-row ${!this.tutorialOpen && tree.id === this.workspace.activeTreeId ? "active" : ""}" role="button" tabindex="0" aria-current=${!this.tutorialOpen && tree.id === this.workspace.activeTreeId ? "true" : nothing} @click=${() => this.switchTree(tree.id)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "tree", tree.id)} @keydown=${(event: KeyboardEvent) => this.treeRowKey(event, tree.id)}>
+          ${this.editingTreeId === tree.id ? html`<input data-tree-edit class="tree-name-input" maxlength=${ELEMENT_TEXT_LIMIT} .value=${tree.name} aria-label=${this.t("treeText")} @click=${(event: Event) => event.stopPropagation()} @contextmenu=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => this.treeRenameKey(event, tree.id)} @blur=${(event: FocusEvent) => this.commitTreeRename(event.currentTarget as HTMLInputElement, tree.id)} />` : html`<span class="tree-row-label" title=${tree.name}>${tree.name}</span>`}
+        </div>`)}
+      </div>
+      <div class="tree-sidebar-footer"><button class="tutorial-tree ${this.tutorialOpen ? "active" : ""}" aria-pressed=${this.tutorialOpen} @click=${this.openTutorial}>Tutorial</button><button class="add-tree" aria-label=${this.t("createTree")} title=${this.t("createTree")} @click=${this.createTree}>${this.renderIcon("plus")}</button></div>
+    </aside>`;
+  }
+
+  private renderContextToolbar() {
+    const menu = this.contextMenu;
+    if (!menu) return nothing;
+    if (menu.kind === "element") {
+      const entry = findEntry(this.root, menu.id);
+      if (!entry) return nothing;
+      return html`<div class="context-toolbar" role="toolbar" aria-label=${this.t("elementActions")} style=${`left:${menu.x}px;top:${menu.y}px`}>
+        <button aria-label=${this.t("copyElementName")} title=${this.t("copyName")} @click=${() => void this.copyElementName(menu.id)}>${this.renderIcon("copy")}</button>
+        ${entry.parent && !this.tutorialOpen ? html`<button aria-label=${this.t("deleteElement")} title=${this.t("delete")} @click=${() => this.deleteElement(menu.id)}>${this.renderIcon("trash")}</button>` : nothing}
+      </div>`;
+    }
+    const tree = this.workspace.trees.find(({ id }) => id === menu.id);
+    if (!tree) return nothing;
+    return html`<div class="context-toolbar" role="toolbar" aria-label=${this.t("treeActions")} style=${`left:${menu.x}px;top:${menu.y}px`}>
+      <button aria-label=${this.t("editTreeName")} title=${this.t("editName")} @click=${() => this.beginTreeRename(tree.id)}>${this.renderIcon("edit")}</button>
+      <button aria-label=${this.t("duplicateTree")} title=${this.t("duplicate")} @click=${() => this.duplicateWorkspaceTree(tree.id)}>${this.renderIcon("duplicate")}</button>
+      <button aria-label=${this.t("exportTree")} title=${this.t("export")} @click=${() => this.downloadTree(tree)}>${this.renderIcon("download")}</button>
+    </div>`;
+  }
+
   render() {
-    return html`<main class="workspace" tabindex="0" role="application" aria-label="Voronoi Organizer">
+    return html`<main class="workspace" lang=${this.language} tabindex="0" role="application" aria-label="Mapflowy" @pointerdown=${(event: PointerEvent) => this.workspacePointerDown(event)}>
       <div class="stage ${this.view === "file" ? "file" : ""}">${this.view === "voronoi" ? this.renderVoronoi() : this.view === "tree" ? this.renderTree() : this.renderFileTree()}</div>
       <div class="topbar">
-        <nav class="crumbs" aria-label="Current location">${this.path.map((node, index) => html`${index ? html`<span class="separator">/</span>` : nothing}<span>${node.name}</span>`)}</nav>
-        <div class="top-actions"><button class="theme-toggle" aria-pressed=${this.theme === "dark"} aria-label=${`Use ${this.theme === "dark" ? "light" : "dark"} mode`} title=${`Use ${this.theme === "dark" ? "light" : "dark"} mode`} @click=${this.toggleTheme}>${this.theme === "dark" ? "Light" : "Dark"}</button><button @click=${this.download}>Export</button><button @click=${this.openHelp}>Help</button><a href="/login">Log in</a></div>
+        <div class="location-controls">
+          <nav class="crumbs" aria-label=${this.t("currentLocation")}>${this.path.map((node, index) => html`${index ? html`<span class="separator" aria-hidden="true">/</span>` : nothing}<button class="crumb" aria-current=${index === this.path.length - 1 ? "location" : nothing} @click=${() => this.chooseBreadcrumb(node, index)}>${node.name}</button>`)}</nav>
+          ${this.view === "voronoi" && this.path.length > 1 ? html`<button class="back-button" aria-label=${this.t("goUpOneLevel")} title=${this.t("goBack")} @click=${this.goBack}>${this.renderIcon("back")}</button>` : nothing}
+        </div>
+        <div class="top-actions"><button class="icon-button theme-toggle" aria-pressed=${this.theme === "dark"} aria-label=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} title=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} @click=${this.toggleTheme}>${this.renderIcon(this.theme === "dark" ? "sun" : "moon")}</button><button class="language-toggle" aria-label=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} title=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} @click=${() => this.setLanguage(this.language === "en" ? "es" : "en")}>${this.language === "en" ? "ES" : "EN"}</button><button class="icon-button" aria-label=${this.t("openHelp")} title=${this.t("help")} @click=${this.openHelp}>${this.renderIcon("help")}</button></div>
       </div>
-      <div class="switcher"><view-switcher .view=${this.view} @view-change=${(event: CustomEvent<OrganizerView>) => this.chooseView(event.detail)}></view-switcher></div>
+      <div class="switcher"><view-switcher .view=${this.view} .language=${this.language} @view-change=${(event: CustomEvent<OrganizerView>) => this.chooseView(event.detail)}></view-switcher></div>
+      <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeTreeList" : "openTreeList")} title=${this.t("treeList")} @click=${() => { this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
+      ${this.renderSidebar()}
+      ${this.renderContextToolbar()}
+      <span class="storage-note" title=${this.t("savedHereTitle")}>${this.t("savedHere")}</span>
+      ${this.storageSaveFailed ? html`<div class="save-error" role="alert">${this.t("saveError")}</div>` : nothing}
+      ${this.toast ? html`<div class="toast ${this.storageSaveFailed ? "raised" : ""}" role="status">${this.toast}</div>` : nothing}
       <p class="sr-only" aria-live="polite">${this.status}</p>
       <dialog @click=${(event: MouseEvent) => { if (event.target === event.currentTarget) (event.currentTarget as HTMLDialogElement).close(); }}>
-        <h2>Keyboard shortcuts</h2>
-        <ul><li><kbd>N</kbd> add a child</li><li><kbd>E</kbd> edit the selected node</li><li>Double-click a Voronoi cell to open it; double-click its name to edit it</li><li>Click a highlighted viewport-edge band to open that node and add a child</li><li><kbd>↑ ↓ ← →</kbd> move</li><li><kbd>Enter</kbd> open or add sibling</li><li><kbd>Shift</kbd> + <kbd>Enter</kbd> go back</li><li><kbd>Tab</kbd> / <kbd>Shift</kbd> + <kbd>Tab</kbd> indent / outdent</li><li><kbd>Delete</kbd> remove</li><li><kbd>G</kbd> tree graph · <kbd>F</kbd> file tree</li></ul>
-        <button @click=${() => this.renderRoot.querySelector<HTMLDialogElement>("dialog")?.close()}>Close</button>
+        <h2>${this.t("keyboardHelp")}</h2>
+        <ul><li class="shortcut-section">${this.t("generalShortcuts")}</li><li><kbd>N</kbd> ${this.t("addChild")}</li><li><kbd>E</kbd> ${this.t("editElement")}</li><li><kbd>↑ ↓ ← →</kbd> ${this.t("move")}</li><li class="shortcut-section">${this.t("shortcutVoronoi")}</li><li><kbd>Enter</kbd> ${this.t("openOrAddSibling")}</li><li><kbd>Shift</kbd> + <kbd>Enter</kbd> ${this.t("goBack")}</li><li class="shortcut-section">${this.t("treeView")}</li><li><kbd>Tab</kbd> / <kbd>Shift</kbd> + <kbd>Tab</kbd> ${this.t("shortcutIndent")}</li></ul>
+        <button @click=${() => this.renderRoot.querySelector<HTMLDialogElement>("dialog")?.close()}>${this.t("close")}</button>
       </dialog>
     </main>`;
   }
