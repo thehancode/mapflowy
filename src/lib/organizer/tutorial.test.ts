@@ -26,34 +26,41 @@ describe("Mapflowy tutorial tree", () => {
     }
   });
 
-  it("orders the main lessons by navigation, editing, node creation, and map creation", () => {
-    expect(createTutorialTree("en").children.map(({ name }) => name)).toEqual(["Move around", "Edit nodes", "Add nodes", "Create map"]);
+  it("contains exactly the requested flat English and Spanish lessons", () => {
+    expect(createTutorialTree("en").children.map(({ name }) => name)).toEqual([
+      'Add nodes with "A"',
+      "Right-click for copy and delete",
+      "Ideas flow better with keyboard",
+      "Strikethrough with middle click or space space",
+      'Edit nodes with "E"',
+    ]);
+    expect(createTutorialTree("es").children.map(({ name }) => name)).toEqual([
+      'Añade nodos con "A"',
+      "Clic derecho para copiar y eliminar",
+      "Las ideas fluyen mejor con el teclado",
+      "Tacha con clic central o doble espacio",
+      'Edita nodos con "E"',
+    ]);
   });
 
-  it("includes the click instructions for creating and editing nodes", () => {
-    const tutorial = createTutorialTree("en");
-    expect(tutorial.children.find(({ id }) => id === "tutorial-move")?.children.map(({ name }) => name)).toEqual(["Use arrow keys", "Change the view"]);
-    expect(tutorial.children.find(({ id }) => id === "tutorial-create")?.children.map(({ name }) => name)).toEqual(["Press A", "Click the ring", "Click the +"]);
-    expect(tutorial.children.find(({ id }) => id === "tutorial-edit")?.children.map(({ name }) => name)).toEqual(["Press E", "Click the text", "Right-click actions"]);
-    expect(tutorial.children.find(({ id }) => id === "tutorial-create-map")?.children.map(({ name }) => name)).toEqual(["Click the menu", "+ New map"]);
-    expect(createTutorialTree("es").children.find(({ id }) => id === "tutorial-create-map")?.children.map(({ name }) => name)).toEqual(["Click en el menú", "+ Nuevo mapa"]);
-    expect(createTutorialTree("es").children.find(({ id }) => id === "tutorial-move")?.children.map(({ name }) => name)).toEqual(["Usa las flechas", "Cambia la vista"]);
-    expect(createTutorialTree("es").children.find(({ id }) => id === "tutorial-edit")?.children.map(({ name }) => name)).toEqual(["Presiona E", "Clic en el texto", "Clic derecho"]);
-    expect(createTutorialTree("es").children.find(({ id }) => id === "tutorial-create")?.children.map(({ name }) => name)).toEqual(["Presiona A", "Clic en el aro", "Clic en +"]);
+  it("keeps all tutorial lessons directly below Mapflowy", () => {
+    for (const language of ["en", "es"] as const) {
+      expect(createTutorialTree(language).children.every(({ children }) => children.length === 0)).toBe(true);
+    }
   });
 
   it("translates untouched text while preserving custom text and structure", () => {
     const document = createTutorialDocument("en");
-    const edit = flattenTree(document.root).find(({ node }) => node.id === "tutorial-edit")!.node;
+    const edit = flattenTree(document.root).find(({ node }) => node.id === "tutorial-edit-nodes")!.node;
     edit.name = "My editing notes";
     document.customTextIds.push(edit.id);
-    document.root.children = document.root.children.filter(({ id }) => id !== "tutorial-move");
+    document.root.children = document.root.children.filter(({ id }) => id !== "tutorial-strikethrough");
     document.root.children.push({ id: "custom", name: "Keep me", children: [] });
 
     const localized = localizeTutorialDocument(document, "es");
-    expect(flattenTree(localized.root).find(({ node }) => node.id === "tutorial-edit")!.node.name).toBe("My editing notes");
-    expect(flattenTree(localized.root).find(({ node }) => node.id === "tutorial-create")!.node.name).toBe("Añadir nodos");
-    expect(flattenTree(localized.root).some(({ node }) => node.id === "tutorial-move")).toBe(false);
+    expect(flattenTree(localized.root).find(({ node }) => node.id === "tutorial-edit-nodes")!.node.name).toBe("My editing notes");
+    expect(flattenTree(localized.root).find(({ node }) => node.id === "tutorial-add-nodes")!.node.name).toBe('Añade nodos con "A"');
+    expect(flattenTree(localized.root).some(({ node }) => node.id === "tutorial-strikethrough")).toBe(false);
     expect(flattenTree(localized.root).find(({ node }) => node.id === "custom")!.node.name).toBe("Keep me");
   });
 

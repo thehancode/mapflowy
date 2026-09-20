@@ -41,9 +41,10 @@ describe("organizer translations", () => {
     expect([translate("en", "openNode"), translate("en", "goBack")]).toEqual(["Open node", "Go up one level"]);
     expect([translate("es", "openNode"), translate("es", "goBack")]).toEqual(["Abrir nodo", "Subir un nivel"]);
     expect([translate("en", "viewNode"), translate("es", "viewNode")]).toEqual(["View node", "Ver nodo"]);
-    expect([translate("en", "shortcutAddSibling"), translate("en", "shortcutIndent"), translate("en", "shortcutOutdent")]).toEqual(["Add a sibling-node", "Indent node", "Move node up"]);
+    expect([translate("en", "shortcutAddSibling"), translate("en", "shortcutIndent"), translate("en", "shortcutOutdent")]).toEqual(["Add sibling", "Indent node", "Move node up"]);
     expect([translate("es", "shortcutAddSibling"), translate("es", "shortcutIndent"), translate("es", "shortcutOutdent")]).toEqual(["Añadir hermano", "Anidar nodo", "Subir nodo"]);
     expect(translate("es", "editElement")).toBe("Editar nodo");
+    expect(translate("en", "editElement")).toBe("Edit node");
   });
 
   it("interpolates dynamic values", () => {

@@ -3,11 +3,11 @@ import type { OrganizerNode } from "./types";
 import type { OrganizerLanguage } from "./user-config";
 
 export const TUTORIAL_ROOT_ID = "tutorial-mapflowy";
-export const TUTORIAL_LABEL_LIMIT = 22;
+export const TUTORIAL_LABEL_LIMIT = 64;
 export const TUTORIAL_STORAGE_KEY = "mapflowy-tutorial-v1";
 
 export interface TutorialDocument {
-  version: 1;
+  version: 3;
   language: OrganizerLanguage;
   root: OrganizerNode;
   customTextIds: string[];
@@ -15,16 +15,18 @@ export interface TutorialDocument {
 
 const tutorialText = {
   en: {
-    create: "Add nodes", pressA: "Press A", ring: "Click the ring", plus: "Click the +",
-    edit: "Edit nodes", pressE: "Press E", text: "Click the text", actions: "Right-click actions",
-    move: "Move around", arrows: "Use arrow keys", enter: "Change the view",
-    createMap: "Create map", menu: "Click the menu", newMap: "+ New map",
+    addNodes: 'Add nodes with "A"',
+    copyDelete: "Right-click for copy and delete",
+    keyboard: "Ideas flow better with keyboard",
+    strikethrough: "Strikethrough with middle click or space space",
+    editNodes: 'Edit nodes with "E"',
   },
   es: {
-    create: "Añadir nodos", pressA: "Presiona A", ring: "Clic en el aro", plus: "Clic en +",
-    edit: "Editar nodos", pressE: "Presiona E", text: "Clic en el texto", actions: "Clic derecho",
-    move: "Moverse", arrows: "Usa las flechas", enter: "Cambia la vista",
-    createMap: "Crear mapa", menu: "Click en el menú", newMap: "+ Nuevo mapa",
+    addNodes: 'Añade nodos con "A"',
+    copyDelete: "Clic derecho para copiar y eliminar",
+    keyboard: "Las ideas fluyen mejor con el teclado",
+    strikethrough: "Tacha con clic central o doble espacio",
+    editNodes: 'Edita nodos con "E"',
   },
 } as const;
 
@@ -34,30 +36,17 @@ export function createTutorialTree(language: OrganizerLanguage): OrganizerNode {
     id: TUTORIAL_ROOT_ID,
     name: "Mapflowy",
     children: [
-      { id: "tutorial-move", name: text.move, children: [
-        { id: "tutorial-move-arrows", name: text.arrows, children: [] },
-        { id: "tutorial-move-enter", name: text.enter, children: [] },
-      ] },
-      { id: "tutorial-edit", name: text.edit, children: [
-        { id: "tutorial-edit-e", name: text.pressE, children: [] },
-        { id: "tutorial-edit-text", name: text.text, children: [] },
-        { id: "tutorial-edit-actions", name: text.actions, children: [] },
-      ] },
-      { id: "tutorial-create", name: text.create, children: [
-        { id: "tutorial-create-n", name: text.pressA, children: [] },
-        { id: "tutorial-create-ring", name: text.ring, children: [] },
-        { id: "tutorial-create-plus", name: text.plus, children: [] },
-      ] },
-      { id: "tutorial-create-map", name: text.createMap, children: [
-        { id: "tutorial-map-menu", name: text.menu, children: [] },
-        { id: "tutorial-map-new", name: text.newMap, children: [] },
-      ] },
+      { id: "tutorial-add-nodes", name: text.addNodes, children: [] },
+      { id: "tutorial-copy-delete", name: text.copyDelete, children: [] },
+      { id: "tutorial-keyboard", name: text.keyboard, children: [] },
+      { id: "tutorial-strikethrough", name: text.strikethrough, children: [] },
+      { id: "tutorial-edit-nodes", name: text.editNodes, children: [] },
     ],
   };
 }
 
 export function createTutorialDocument(language: OrganizerLanguage): TutorialDocument {
-  return { version: 1, language, root: createTutorialTree(language), customTextIds: [] };
+  return { version: 3, language, root: createTutorialTree(language), customTextIds: [] };
 }
 
 export function localizeTutorialDocument(document: TutorialDocument, language: OrganizerLanguage): TutorialDocument {
@@ -78,14 +67,15 @@ export interface TutorialRepository {
 
 function normalizeTutorialDocument(value: unknown, language: OrganizerLanguage): TutorialDocument {
   if (!value || typeof value !== "object" || !("root" in value)) return createTutorialDocument(language);
-  const candidate = value as { language?: unknown; root: unknown; customTextIds?: unknown };
+  const candidate = value as { version?: unknown; language?: unknown; root: unknown; customTextIds?: unknown };
+  if (candidate.version !== 3) return createTutorialDocument(language);
   const storedLanguage: OrganizerLanguage = candidate.language === "es" ? "es" : "en";
   const root = normalizeNode(candidate.root);
   const nodeIds = new Set(flattenTree(root).map(({ node }) => node.id));
   const customTextIds = Array.isArray(candidate.customTextIds)
     ? candidate.customTextIds.filter((id): id is string => typeof id === "string" && nodeIds.has(id))
     : [];
-  return localizeTutorialDocument({ version: 1, language: storedLanguage, root, customTextIds }, language);
+  return localizeTutorialDocument({ version: 3, language: storedLanguage, root, customTextIds }, language);
 }
 
 export function createTutorialRepository(options: TutorialRepositoryOptions = {}): TutorialRepository {

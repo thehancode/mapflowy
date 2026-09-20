@@ -46,6 +46,7 @@ export class OrganizerApp extends LitElement {
   @state() private sidebarOpen = false;
   @state() private depthLimitOpen = false;
   @state() private editingMapId: string | null = null;
+  @state() private newMapNamingId: string | null = null;
   @state() private contextMenu: ContextMenuState | null = null;
   @state() private toast = "";
   @state() private storageSaveFailed = false;
@@ -78,21 +79,25 @@ export class OrganizerApp extends LitElement {
     .language-toggle { min-width: 2.5rem; justify-content: center; padding: 0 .55rem !important; }
     .icon-button svg, .context-toolbar svg, .sidebar-toggle svg, .back-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
     .switcher { position: absolute; z-index: 10; top: 1rem; left: 50%; transform: translateX(-50%); }
-    .left-actions { position: absolute; z-index: 12; left: 1rem; bottom: 1rem; display: flex; flex-direction: column; align-items: flex-start; gap: .45rem; }
+    .left-actions { --left-action-gap: .45rem; position: absolute; z-index: 12; left: 1rem; bottom: 1rem; display: flex; flex-direction: column; align-items: flex-start; gap: var(--left-action-gap); }
     .sidebar-toggle { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); cursor: pointer; }
-    .quick-actions { display: flex; flex-direction: column; align-items: flex-start; gap: .45rem; }
+    .quick-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--left-action-gap); }
     .quick-action-button { display: inline-flex; align-items: center; gap: .55rem; min-height: 2rem; padding: .42rem .7rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .72rem; font-weight: 700; cursor: pointer; }
     .quick-action-button kbd { color: var(--ink); }
     .quick-action-button:hover { background: var(--row-hover); }
     .back-button { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); pointer-events: auto; cursor: pointer; }
-    .map-sidebar { position: absolute; z-index: 11; left: 1rem; bottom: 8.75rem; display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
+    .map-sidebar { display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
     .map-sidebar h2 { margin: 0; padding: 1rem 1rem .55rem; font-size: .82rem; }
     .map-list { min-height: 0; overflow-y: auto; padding: .2rem .55rem .65rem; }
     .map-row { display: flex; align-items: center; width: 100%; min-height: 42px; padding: .35rem .55rem; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; }
     .map-row:hover { background: var(--row-hover); }
     .map-row.active { border-color: var(--panel-border); background: var(--row-selected); }
     .map-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; font-weight: 720; }
-    .map-name-input { width: 100%; min-height: 32px; padding: 0 .5rem; border: 1px solid var(--panel-border); border-radius: 7px; background: var(--editor); color: var(--ink); outline: 0; font-weight: 700; }
+    .map-name-editor { display: flex; align-items: center; gap: .35rem; width: 100%; }
+    .map-name-input { min-width: 0; min-height: 32px; flex: 1; padding: 0 .5rem; border: 1px solid var(--panel-border); border-radius: 7px; background: var(--editor); color: var(--ink); outline: 0; font-weight: 700; }
+    .map-name-confirm { display: grid; place-items: center; width: 2rem; height: 2rem; flex: 0 0 2rem; padding: 0; border: 1px solid var(--panel-border); border-radius: 7px; background: var(--editor); color: var(--ink); cursor: pointer; }
+    .map-name-confirm:hover { background: var(--row-hover); }
+    .map-name-confirm svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
     .context-toolbar { position: fixed; z-index: 40; display: flex; gap: .2rem; padding: .3rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--ink); box-shadow: 0 14px 40px var(--shadow); backdrop-filter: blur(18px); }
     .context-toolbar button { display: grid; place-items: center; width: 2.35rem; height: 2.35rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
     .context-toolbar button:hover { background: var(--row-hover); }
@@ -146,7 +151,7 @@ export class OrganizerApp extends LitElement {
       .left-actions { left: .65rem; bottom: .65rem; }
       .shortcut-hints { right: .65rem; bottom: .65rem; }
       .shortcut-hint { max-width: calc(100vw - 1.3rem); }
-      .map-sidebar { left: .65rem; bottom: 8.4rem; width: min(310px, calc(100vw - 1.3rem)); }
+      .map-sidebar { width: min(310px, calc(100vw - 1.3rem)); }
       .file-tree { padding-top: 8.2rem; }
       .file-row { margin-left: calc(var(--depth) * 18px); }
       .tree-node text { font-size: 10px; }
@@ -257,6 +262,7 @@ export class OrganizerApp extends LitElement {
   }
 
   private switchMap(id: string): void {
+    if (this.newMapNamingId) { this.focusPendingMapName(); return; }
     if (this.draft) this.cancelDraft();
     if (this.tutorialOpen) this.tutorialOpen = false;
     if (id === this.workspace.activeMapId) { this.resetToRoot(this.t("opened", { name: this.root.name })); return; }
@@ -269,17 +275,19 @@ export class OrganizerApp extends LitElement {
   }
 
   private createMap(): void {
+    if (this.newMapNamingId) { this.focusPendingMapName(); return; }
     if (this.draft) this.cancelDraft();
     this.tutorialOpen = false;
     const id = newNodeId(collectNodeIds(this.workspace.maps));
     const map: OrganizerNode = { id, name: this.t("untitledMap"), children: [] };
     this.workspace = { version: 3, activeMapId: id, maps: [...this.workspace.maps, map] };
-    this.sidebarOpen = true; this.editingMapId = id;
+    this.sidebarOpen = true; this.editingMapId = id; this.newMapNamingId = id;
     this.resetToRoot(this.t("newMapReady"));
     this.persist();
   }
 
   private openTutorial(): void {
+    if (this.newMapNamingId) { this.focusPendingMapName(); return; }
     if (this.draft) this.cancelDraft();
     this.tutorialOpen = true;
     this.editingMapId = null;
@@ -287,22 +295,57 @@ export class OrganizerApp extends LitElement {
   }
 
   private beginMapRename(id: string): void {
+    if (this.newMapNamingId) { this.focusPendingMapName(); return; }
     this.contextMenu = null; this.sidebarOpen = true; this.editingMapId = id;
+  }
+
+  private focusPendingMapName(): void {
+    requestAnimationFrame(() => this.renderRoot.querySelector<HTMLInputElement>("[data-map-edit]")?.focus());
+  }
+
+  private focusNode(id: string): void {
+    requestAnimationFrame(() => {
+      const target = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-node-id]")).find((element) => element.dataset.nodeId === id);
+      (target ?? this.renderRoot.querySelector<HTMLElement>(".workspace"))?.focus();
+    });
   }
 
   private commitMapRename(input: HTMLInputElement, id: string): void {
     if (this.editingMapId !== id) return;
     const map = this.workspace.maps.find((candidate) => candidate.id === id);
-    if (!map) { this.editingMapId = null; return; }
+    if (!map) { this.editingMapId = null; this.newMapNamingId = null; return; }
     const name = normalizeElementText(input.value, "");
-    if (name) map.name = name;
-    this.editingMapId = null; this.persistMaps(); this.setStatus(this.t("renamed", { name: map.name }));
+    if (!name) { this.setStatus(this.t("mapNameRequired")); input.focus(); return; }
+    const isNewMap = this.newMapNamingId === id;
+    map.name = name;
+    this.editingMapId = null;
+    if (isNewMap) {
+      this.newMapNamingId = null;
+      this.sidebarOpen = false;
+      this.path = [map];
+      this.selectedId = map.id;
+      this.focusNode(map.id);
+    }
+    this.persistMaps(); this.setStatus(this.t("renamed", { name: map.name }));
+  }
+
+  private confirmMapName(id: string): void {
+    const input = this.renderRoot.querySelector<HTMLInputElement>("[data-map-edit]");
+    if (input) this.commitMapRename(input, id);
   }
 
   private mapRenameKey(event: KeyboardEvent, id: string): void {
     event.stopPropagation();
-    if (event.key === "Enter") { event.preventDefault(); this.commitMapRename(event.currentTarget as HTMLInputElement, id); }
-    if (event.key === "Escape") { event.preventDefault(); this.editingMapId = null; }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (this.newMapNamingId === id) this.renderRoot.querySelector<HTMLButtonElement>(".map-name-confirm")?.focus();
+      else this.commitMapRename(event.currentTarget as HTMLInputElement, id);
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (this.newMapNamingId === id) this.focusPendingMapName();
+      else this.editingMapId = null;
+    }
   }
 
   private duplicateWorkspaceMap(id: string): void {
@@ -322,6 +365,7 @@ export class OrganizerApp extends LitElement {
     this.workspace = removeWorkspaceMap(this.workspace, id);
     this.contextMenu = null;
     if (this.editingMapId === id) this.editingMapId = null;
+    if (this.newMapNamingId === id) this.newMapNamingId = null;
     if (wasVisible) {
       this.tutorialOpen = this.workspace.maps.length === 0;
       this.resetToRoot(this.t("deletedMap", { name: map.name }));
@@ -372,6 +416,7 @@ export class OrganizerApp extends LitElement {
 
   private openContextMenu(event: MouseEvent, kind: ContextMenuState["kind"], id: string): void {
     event.preventDefault(); event.stopPropagation();
+    if (kind === "map" && this.newMapNamingId) { this.focusPendingMapName(); return; }
     if (this.draft) return;
     if (kind === "element") this.selectedId = id;
     this.contextMenu = { kind, id, ...this.contextPosition(event.clientX, event.clientY) };
@@ -397,7 +442,7 @@ export class OrganizerApp extends LitElement {
     const path = event.composedPath();
     const includesClass = (...classNames: string[]) => path.some((target) => target instanceof Element && classNames.some((className) => target.classList.contains(className)));
     if (this.contextMenu && !includesClass("context-toolbar")) this.contextMenu = null;
-    if (this.sidebarOpen && !includesClass("map-sidebar", "sidebar-toggle")) this.sidebarOpen = false;
+    if (this.sidebarOpen && !this.newMapNamingId && !includesClass("map-sidebar", "sidebar-toggle")) this.sidebarOpen = false;
   }
 
   private select(id: string): void { const name = findEntry(this.root, id)?.node.name ?? this.t("element"); this.selectedId = id; this.setStatus(this.t("elementSelected", { name })); }
@@ -559,6 +604,7 @@ export class OrganizerApp extends LitElement {
       if (event.key === "Escape") { event.preventDefault(); this.depthLimitOpen = false; }
       return;
     }
+    if (event.key === "Escape" && this.newMapNamingId) { event.preventDefault(); this.focusPendingMapName(); return; }
     if (event.key === "Escape" && this.contextMenu) { event.preventDefault(); this.contextMenu = null; return; }
     if (event.key === "Escape" && this.sidebarOpen) { event.preventDefault(); this.sidebarOpen = false; return; }
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); this.openKeyboardElementMenu(); return; }
@@ -650,7 +696,7 @@ export class OrganizerApp extends LitElement {
         const addSectionPath = isParent ? roundedPolygonPath(parentBand, 0) : viewportEdgeOverlayPath(polygon, edges, this.width, this.height);
         const markerBand = isParent ? parentBand : markerSection?.band;
         const activateEdge = (event: Event) => { event.preventDefault(); event.stopPropagation(); this.openVoronoiNodeAndAddChild(item); };
-        return svg`<g class="cell" data-node-id=${item.id} role="option" aria-selected=${selected} @click=${() => this.select(item.id)} @dblclick=${() => { if (isParent) this.goBack(); else this.openVoronoiNode(item); }} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", item.id)}>
+        return svg`<g class="cell" data-node-id=${item.id} tabindex="-1" role="option" aria-selected=${selected} @click=${() => this.select(item.id)} @dblclick=${() => { if (isParent) this.goBack(); else this.openVoronoiNode(item); }} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", item.id)}>
           <path class="cell-shape" d=${roundedPolygonPath(polygon)} fill=${palette[hashString(item.id) % palette.length]}></path>
           ${markerBand && polygonArea(markerBand) >= 1 ? svg`<g class="edge-bands" role="button" tabindex="0" aria-label=${this.t("openAndAddChild", { name: item.name })} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}><path class="edge-strip" fill-rule="evenodd" d=${addSectionPath}></path>${(() => {
             const marker = polygonCentroid(markerBand);
@@ -695,13 +741,13 @@ export class OrganizerApp extends LitElement {
 
   private renderFileTree() {
     return html`<div class="file-tree" role="tree" aria-label=${this.t("projectTree")}>${flattenTree(this.root).map((entry) => html`
-      <div class="file-row ${entry.node.id === this.selectedId ? "selected" : ""}" data-node-id=${entry.node.id} style="--depth:${entry.depth}" role="treeitem" aria-level=${entry.depth + 1} aria-selected=${entry.node.id === this.selectedId} @click=${() => { if (!this.draft) { this.path = entry.path; this.select(entry.node.id); } }} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)}>
+      <div class="file-row ${entry.node.id === this.selectedId ? "selected" : ""}" data-node-id=${entry.node.id} tabindex="-1" style="--depth:${entry.depth}" role="treeitem" aria-level=${entry.depth + 1} aria-selected=${entry.node.id === this.selectedId} @click=${() => { if (!this.draft) { this.path = entry.path; this.select(entry.node.id); } }} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)}>
         <span class="branch" style=${`color:${treeLevelColors[entry.depth % treeLevelColors.length]}`} aria-hidden="true">${treeLevelSymbols[entry.depth % treeLevelSymbols.length]}</span>
         ${entry.node.id === this.draft?.id ? html`<input data-draft class="file-editor" maxlength=${ELEMENT_TEXT_LIMIT} aria-label=${this.t(this.draft.mode === "edit" ? "editorEdit" : "editorNew")} .value=${this.draft.mode === "edit" ? entry.node.name : ""} @click=${(event: Event) => event.stopPropagation()} @keydown=${this.draftKey} @blur=${(event: FocusEvent) => this.commitDraft(event.currentTarget as HTMLInputElement)} />` : html`<span class="name" title=${entry.node.id === this.selectedId ? nothing : entry.node.name}>${entry.node.name}</span><span class="meta">${entry.node.children.length ? this.t(entry.node.children.length === 1 ? "childCountOne" : "childCountMany", { count: entry.node.children.length }) : ""}</span>`}
       </div>`)} </div>`;
   }
 
-  private renderIcon(name: "menu" | "back" | "sun" | "moon" | "copy" | "trash" | "edit" | "duplicate" | "download" | "plus") {
+  private renderIcon(name: "menu" | "back" | "sun" | "moon" | "copy" | "trash" | "edit" | "duplicate" | "download" | "check" | "plus") {
     if (name === "menu") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>`;
     if (name === "back") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6M9 12h10"></path></svg>`;
     if (name === "sun") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41"></path></svg>`;
@@ -711,6 +757,7 @@ export class OrganizerApp extends LitElement {
     if (name === "edit") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20ZM14.5 7.5l3 3"></path></svg>`;
     if (name === "duplicate") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2M13.5 11v5M11 13.5h5"></path></svg>`;
     if (name === "download") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"></path></svg>`;
+    if (name === "check") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>`;
     return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>`;
   }
 
@@ -720,7 +767,10 @@ export class OrganizerApp extends LitElement {
       <h2>${this.t("mapList")}</h2>
       <div class="map-list">${this.workspace.maps.map((map) => html`
         <div class="map-row ${!this.tutorialOpen && map.id === this.workspace.activeMapId ? "active" : ""}" role="button" tabindex="0" aria-current=${!this.tutorialOpen && map.id === this.workspace.activeMapId ? "true" : nothing} @click=${() => this.switchMap(map.id)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "map", map.id)} @keydown=${(event: KeyboardEvent) => this.mapRowKey(event, map.id)}>
-          ${this.editingMapId === map.id ? html`<input data-map-edit class="map-name-input" maxlength=${ELEMENT_TEXT_LIMIT} .value=${map.name} aria-label=${this.t("mapText")} @click=${(event: Event) => event.stopPropagation()} @contextmenu=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => this.mapRenameKey(event, map.id)} @blur=${(event: FocusEvent) => this.commitMapRename(event.currentTarget as HTMLInputElement, map.id)} />` : html`<span class="map-row-label" title=${map.name}>${map.name}</span>`}
+          ${this.editingMapId === map.id ? html`<div class="map-name-editor" @click=${(event: Event) => event.stopPropagation()} @contextmenu=${(event: Event) => event.stopPropagation()}>
+            <input data-map-edit class="map-name-input" maxlength=${ELEMENT_TEXT_LIMIT} .value=${map.name} aria-label=${this.t("mapText")} @keydown=${(event: KeyboardEvent) => this.mapRenameKey(event, map.id)} @blur=${(event: FocusEvent) => { if (this.newMapNamingId !== map.id) this.commitMapRename(event.currentTarget as HTMLInputElement, map.id); }} />
+            <button class="map-name-confirm" aria-label=${this.t("confirmMapName")} title=${this.t("confirmMapName")} @keydown=${(event: KeyboardEvent) => event.stopPropagation()} @click=${(event: MouseEvent) => { event.stopPropagation(); this.confirmMapName(map.id); }}>${this.renderIcon("check")}</button>
+          </div>` : html`<span class="map-row-label" title=${map.name}>${map.name}</span>`}
         </div>`)}
         <div class="map-row ${this.tutorialOpen ? "active" : ""}" role="button" tabindex="0" aria-current=${this.tutorialOpen ? "true" : nothing} @click=${this.openTutorial} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.openTutorial(); } }}>
           <span class="map-row-label">Tutorial</span>
@@ -774,13 +824,13 @@ export class OrganizerApp extends LitElement {
       </div>
       <div class="switcher"><view-switcher .view=${this.view} .language=${this.language} @view-change=${(event: CustomEvent<OrganizerView>) => this.chooseView(event.detail)}></view-switcher></div>
       <div class="left-actions">
-        <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
+        ${this.renderSidebar()}
+        <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { if (this.newMapNamingId) { this.focusPendingMapName(); return; } this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
         <div class="quick-actions">
           <button class="quick-action-button new-map-button" aria-label=${this.t("createMap")} title=${this.t("createMap")} @click=${this.createMap}><kbd>N</kbd><span>${this.t("newMap")}</span></button>
           <button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}><kbd>A</kbd><span>${this.t("addNode")}</span></button>
         </div>
       </div>
-      ${this.renderSidebar()}
       ${this.renderContextToolbar()}
       ${this.renderShortcutHints()}
       ${this.depthLimitOpen ? html`<div class="modal-backdrop" @click=${(event: MouseEvent) => { if (event.target === event.currentTarget) this.depthLimitOpen = false; }}>
