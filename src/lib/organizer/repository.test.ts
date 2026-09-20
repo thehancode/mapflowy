@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRepository, emptyWorkspace, LEGACY_STORAGE_KEY, loadMap, normalizeWorkspace, PREVIOUS_STORAGE_KEY, removeWorkspaceMap, STORAGE_KEY } from "./repository";
+import { createRepository, emptyWorkspace, LEGACY_STORAGE_KEY, loadMap, normalizeWorkspace, PREVIOUS_STORAGE_KEY, parseMap, removeWorkspaceMap, STORAGE_KEY } from "./repository";
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial));
@@ -11,6 +11,22 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 describe("organizer workspace repository", () => {
+  it("saves marks and assigned colors across reload and JSON export/import", async () => {
+    const storage = memoryStorage();
+    const repository = createRepository({ storage: storage as unknown as Storage });
+    const workspace = normalizeWorkspace({ name: "Parent", marked: true, colorIndex: 2, children: [{ name: "Child", marked: true, colorIndex: 6 }] });
+    expect(repository.save(workspace)).toBe(true);
+    const reloaded = await createRepository({ storage: storage as unknown as Storage }).load();
+    expect(reloaded).toEqual(workspace);
+    expect(parseMap(JSON.parse(repository.exportMapJson(reloaded.maps[0])))).toEqual(workspace.maps[0]);
+    delete reloaded.maps[0].marked;
+    expect(repository.save(reloaded)).toBe(true);
+    expect((await repository.load()).maps[0].marked).toBeFalsy();
+    expect((await repository.load()).maps[0].children[0].marked).toBe(true);
+    expect((await repository.load()).maps[0].colorIndex).toBe(2);
+    expect((await repository.load()).maps[0].children[0].colorIndex).toBe(6);
+  });
+
   it("migrates a version-one map into a workspace", () => {
     const workspace = normalizeWorkspace({ version: 1, root: { id: "root", name: "Projects", children: [] } });
     expect(workspace).toEqual({ version: 3, activeMapId: "root", maps: [{ id: "root", name: "Projects", children: [] }] });

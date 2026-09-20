@@ -1,6 +1,7 @@
 import type { OrganizerLanguage } from "./user-config";
 
 const english = {
+  spaceKey: "Space", markNode: "Mark node", nodeMarked: "{name} marked.", nodeUnmarked: "{name} unmarked.",
   addChild: "Add a child-node", addChildNode: "Add child-node", addChildren: "Add child-nodes", addNode: "Add node", alreadyCurrent: "{name} is already the current level.", alreadyFirstLevel: "{name} is already at the first level.",
   cancelNewMap: "Cancel new map", childCountOne: "1 child", childCountMany: "{count} children", close: "Close", closeMapList: "Close map list", completeGraphView: "Complete graph view.", completeProjectGraph: "Complete map graph", confirmMapName: "Confirm map name", contextualShortcuts: "Contextual keyboard shortcuts",
   connectedChoice: " Connected choice {current} of {total}.", copied: "The complete element text was copied.", copiedToast: "Copied to clipboard", copyFailed: "The element text could not be copied.", copyFailedToast: "Could not copy to clipboard",
@@ -15,6 +16,7 @@ const english = {
 export type TranslationKey = keyof typeof english;
 
 const spanish: Record<TranslationKey, string> = {
+  spaceKey: "Espacio", markNode: "Marcar nodo", nodeMarked: "Se marcó {name}.", nodeUnmarked: "Se desmarcó {name}.",
   addChild: "Añadir un nodo-hijo", addChildNode: "Añadir nodo-hijo", addChildren: "Añadir nodos-hijo", addNode: "Añadir nodo", alreadyCurrent: "{name} ya es el nivel actual.", alreadyFirstLevel: "{name} ya está en el primer nivel.",
   cancelNewMap: "Cancelar mapa nuevo", childCountOne: "1 hijo", childCountMany: "{count} hijos", close: "Cerrar", closeMapList: "Cerrar lista de mapas", completeGraphView: "Vista de grafo completa.", completeProjectGraph: "Grafo completo del mapa", confirmMapName: "Confirmar nombre del mapa", contextualShortcuts: "Atajos de teclado contextuales",
   connectedChoice: " Opción conectada {current} de {total}.", copied: "Se copió el texto completo del elemento.", copiedToast: "Copiado al portapapeles", copyFailed: "No se pudo copiar el texto del elemento.", copyFailedToast: "No se pudo copiar al portapapeles",

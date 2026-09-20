@@ -2,6 +2,8 @@ export interface OrganizerNode {
   id: string;
   name: string;
   children: OrganizerNode[];
+  marked?: boolean;
+  colorIndex?: number;
 }
 
 export interface OrganizerMapDocument {

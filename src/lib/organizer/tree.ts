@@ -3,6 +3,30 @@ import type { OrganizerNode, TreeEntry, Point, LayoutEntry, RadialTreeLayout } f
 export const ELEMENT_TEXT_LIMIT = 4096;
 export const GRAPH_ROOT_RADIUS = 24;
 export const MAX_TREE_LEVELS = 12;
+export const NODE_PALETTE = ["#f38b70", "#efc65d", "#71c1b2", "#88afe0", "#b99bdf", "#df9eb6", "#9fc477", "#e5a665"] as const;
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (const character of value) { hash ^= character.charCodeAt(0); hash = Math.imul(hash, 16777619); }
+  return hash >>> 0;
+}
+
+function storedColor(node: OrganizerNode): { colorIndex: number } | Record<string, never> {
+  return Number.isInteger(node.colorIndex) && node.colorIndex! >= 0 && node.colorIndex! < NODE_PALETTE.length
+    ? { colorIndex: node.colorIndex! }
+    : {};
+}
+
+export function nodeColorIndex(node: Pick<OrganizerNode, "id" | "colorIndex">): number {
+  return Number.isInteger(node.colorIndex) && node.colorIndex! >= 0 && node.colorIndex! < NODE_PALETTE.length
+    ? node.colorIndex!
+    : hashString(node.id) % NODE_PALETTE.length;
+}
+
+export function newChildColorIndex(id: string, parent: OrganizerNode): number {
+  const proposed = hashString(id) % NODE_PALETTE.length;
+  return proposed === nodeColorIndex(parent) ? (proposed + 1) % NODE_PALETTE.length : proposed;
+}
 
 export function normalizeElementText(value: string, fallback = 'Untitled'): string {
   return (value.trim() || fallback).slice(0, ELEMENT_TEXT_LIMIT);
@@ -71,11 +95,14 @@ export function normalizeNode(value: unknown, ids = new Set<string>()): Organize
   if (ids.has(id)) id = newNodeId(ids);
   ids.add(id);
   const children = Array.isArray(candidate.children) ? candidate.children.map((child) => normalizeNode(child, ids)) : [];
-  return { id, name: normalizeElementText(candidate.name), children };
+  const colorIndex = Number.isInteger(candidate.colorIndex) && candidate.colorIndex! >= 0 && candidate.colorIndex! < NODE_PALETTE.length
+    ? { colorIndex: candidate.colorIndex! }
+    : {};
+  return { id, name: normalizeElementText(candidate.name), children, ...(candidate.marked === true ? { marked: true } : {}), ...colorIndex };
 }
 
 export function cloneTree(root: OrganizerNode): OrganizerNode {
-  return { id: root.id, name: root.name, children: root.children.map(cloneTree) };
+  return { id: root.id, name: root.name, children: root.children.map(cloneTree), ...(root.marked ? { marked: true } : {}), ...storedColor(root) };
 }
 
 export function collectNodeIds(roots: OrganizerNode[]): Set<string> {
@@ -87,7 +114,7 @@ export function cloneTreeWithFreshIds(root: OrganizerNode, existingIds: Iterable
   const clone = (node: OrganizerNode): OrganizerNode => {
     const id = newNodeId(usedIds);
     usedIds.add(id);
-    return { id, name: node.name, children: node.children.map(clone) };
+    return { id, name: node.name, children: node.children.map(clone), ...(node.marked ? { marked: true } : {}), ...storedColor(node) };
   };
   return clone(root);
 }
@@ -103,7 +130,7 @@ export function importGuestAsBranch(accountRoot: OrganizerNode, guestRoot: Organ
   const cloneWithFreshIds = (node: OrganizerNode): OrganizerNode => {
     const id = newNodeId(usedIds);
     usedIds.add(id);
-    return { id, name: node.name, children: node.children.map(cloneWithFreshIds) };
+    return { id, name: node.name, children: node.children.map(cloneWithFreshIds), ...(node.marked ? { marked: true } : {}), ...storedColor(node) };
   };
   const branch: OrganizerNode = {
     id: newNodeId(usedIds),
@@ -116,6 +143,7 @@ export function importGuestAsBranch(accountRoot: OrganizerNode, guestRoot: Organ
 
 export function addChild(parent: OrganizerNode, name = 'Untitled', id?: string): OrganizerNode {
   const child = createNode(name, [], id);
+  child.colorIndex = newChildColorIndex(child.id, parent);
   parent.children.push(child);
   return child;
 }
@@ -123,6 +151,7 @@ export function insertSibling(root: OrganizerNode, siblingOf: string, name = 'Un
   const entry = findEntry(root, siblingOf);
   if (!entry?.parent) return null;
   const child = createNode(name, [], id);
+  child.colorIndex = newChildColorIndex(child.id, entry.parent);
   entry.parent.children.splice(entry.index + 1, 0, child);
   return child;
 }

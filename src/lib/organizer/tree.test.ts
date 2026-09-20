@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canPlaceSubtreeAtDepth, duplicateMap, ELEMENT_TEXT_LIMIT, flattenTree, importGuestAsBranch, MAX_TREE_LEVELS, normalizeNode, radialTreeLayout, directionalConnectedCandidates, subtreeLevels, voronoiPathForSelection } from "./index";
+import { addChild, cloneTree, canPlaceSubtreeAtDepth, duplicateMap, ELEMENT_TEXT_LIMIT, flattenTree, importGuestAsBranch, insertSibling, MAX_TREE_LEVELS, newChildColorIndex, nodeColorIndex, normalizeNode, radialTreeLayout, directionalConnectedCandidates, subtreeLevels, voronoiPathForSelection } from "./index";
 import type { OrganizerNode } from "./types";
 
 const tree = (): OrganizerNode => ({
@@ -10,6 +10,54 @@ const tree = (): OrganizerNode => ({
 });
 
 describe("organizer tree", () => {
+  it("assigns new children and siblings a color different from their parent", () => {
+    const parent: OrganizerNode = { id: "parent", name: "Parent", children: [] };
+    const childId = "child-with-a-candidate-color";
+    parent.colorIndex = nodeColorIndex({ id: childId });
+
+    const child = addChild(parent, "Child", childId);
+    const sibling = insertSibling(parent, child.id, "Sibling", childId + "-sibling")!;
+
+    expect(child.colorIndex).toBe(newChildColorIndex(child.id, parent));
+    expect(child.colorIndex).not.toBe(nodeColorIndex(parent));
+    expect(sibling.colorIndex).not.toBe(nodeColorIndex(parent));
+  });
+
+  it("keeps legacy colors hash-based and ignores malformed stored colors", () => {
+    const legacy = { id: "legacy" };
+    expect(nodeColorIndex(legacy)).toBe(nodeColorIndex(legacy));
+    for (const colorIndex of [-1, 8, 1.5, "2", null]) {
+      const normalized = normalizeNode({ id: "legacy", name: "Legacy", children: [], colorIndex });
+      expect(normalized.colorIndex).toBeUndefined();
+      expect(nodeColorIndex(normalized)).toBe(nodeColorIndex(legacy));
+    }
+  });
+
+  it("preserves marks through normalization, cloning, duplication, and guest import", () => {
+    const original = tree();
+    original.marked = true;
+    original.colorIndex = 3;
+    original.children[0].marked = true;
+    original.children[0].colorIndex = 5;
+    const copies = [normalizeNode(original), cloneTree(original), duplicateMap(original, [original]), importGuestAsBranch(tree(), original).children[0]];
+    for (const copy of copies) {
+      expect(copy.marked).toBe(true);
+      expect(copy.colorIndex).toBe(3);
+      expect(copy.children[0].marked).toBe(true);
+      expect(copy.children[0].colorIndex).toBe(5);
+      expect(copy.children[1].marked).toBeFalsy();
+      expect(copy.children[0].children).toHaveLength(1);
+    }
+    expect(addChild(original, "New child").marked).toBeFalsy();
+    expect(original.children).toHaveLength(3);
+  });
+
+  it("treats legacy and malformed marks as unmarked", () => {
+    for (const marked of [undefined, false, "true", 1, null]) {
+      expect(normalizeNode({ name: "Old node", marked }).marked).toBeFalsy();
+    }
+  });
+
   it("normalizes names and replaces duplicate IDs", () => {
     const normalized = normalizeNode({ id: "same", name: "  Projects ", children: [{ id: "same", name: "", children: [] }] });
     expect(normalized.name).toBe("Projects");
