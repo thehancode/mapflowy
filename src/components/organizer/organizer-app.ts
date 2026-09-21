@@ -5,7 +5,7 @@ import type { OrganizerLanguage, OrganizerNode, OrganizerWorkspaceDocument, Poin
 import {
   canPlaceSubtreeAtDepth, circleLayout, collectNodeIds, createOnboardingRepository, createRepository, createTutorialDocument, createTutorialRepository, createUserConfigRepository, duplicateMap, ELEMENT_TEXT_LIMIT, emptyWorkspace, findEntry, flattenTree, fitLabel, GRAPH_ROOT_RADIUS, graphNodeLabelLines, localizeTutorialDocument, MAX_TREE_LEVELS, newChildColorIndex, newNodeId, NODE_PALETTE, nodeColorIndex, normalizeElementText,
   polygonArea, polygonBottomBand, polygonCentroid, radialArcPath, radialLinkPath, radialTreeLayout, removeWorkspaceMap, roundedPolygonPath, visibleItems,
-  translate, viewportEdgeBand, viewportEdgeOverlayPath, viewportEdges, viewportEdgeSpan, voronoiPathForSelection, voronoiPolygons,
+  translate, voronoiPathForSelection, voronoiPolygons,
 } from "../../lib/organizer";
 import { MarkShortcut } from "../../lib/organizer/mark-shortcut";
 import type { OrganizerView } from "./view-switcher";
@@ -53,8 +53,8 @@ export class OrganizerApp extends LitElement {
   private pendingMapRestore?: { workspace: OrganizerWorkspaceDocument; tutorialOpen: boolean; path: OrganizerNode[]; selectedId: string };
 
   static styles = css`
-    :host { --ink: #171a17; --selection: var(--ink); --background: #e8e7de; --file-background: #f4f3ec; --panel: rgba(250,249,244,.88); --panel-border: rgba(23,26,23,.13); --shadow: rgba(23,26,23,.12); --muted: #686a63; --cell-gap: #faf9f4; --edge-overlay-hover: rgba(255,255,255,.18); --row-hover: rgba(255,255,255,.58); --row-selected: #fff; --editor: rgba(255,255,255,.96); --dialog: #faf9f4; --kbd: #fff; display: block; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; color: var(--ink); background: var(--background); color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-    :host([theme="dark"]) { --ink: #f2f0e8; --selection: #b8bab2; --background: #151612; --file-background: #1b1c18; --panel: rgba(35,36,31,.9); --panel-border: rgba(242,240,232,.16); --shadow: rgba(0,0,0,.38); --muted: #aaa99f; --cell-gap: #151612; --edge-overlay-hover: color-mix(in srgb, var(--ink) 14%, transparent); --row-hover: rgba(255,255,255,.06); --row-selected: #292a24; --editor: rgba(38,39,34,.98); --dialog: #23241f; --kbd: #30312b; color-scheme: dark; }
+    :host { --ink: #171a17; --selection: var(--ink); --background: #e8e7de; --file-background: #f4f3ec; --panel: rgba(250,249,244,.88); --panel-border: rgba(23,26,23,.13); --shadow: rgba(23,26,23,.12); --muted: #686a63; --cell-gap: #faf9f4; --add-child-idle: rgba(255,255,255,.08); --add-child-hover: rgba(255,255,255,.18); --row-hover: rgba(255,255,255,.58); --row-selected: #fff; --editor: rgba(255,255,255,.96); --dialog: #faf9f4; --kbd: #fff; display: block; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; color: var(--ink); background: var(--background); color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    :host([theme="dark"]) { --ink: #f2f0e8; --selection: #b8bab2; --background: #151612; --file-background: #1b1c18; --panel: rgba(35,36,31,.9); --panel-border: rgba(242,240,232,.16); --shadow: rgba(0,0,0,.38); --muted: #aaa99f; --cell-gap: #151612; --add-child-idle: color-mix(in srgb, var(--ink) 6%, transparent); --add-child-hover: color-mix(in srgb, var(--ink) 14%, transparent); --row-hover: rgba(255,255,255,.06); --row-selected: #292a24; --editor: rgba(38,39,34,.98); --dialog: #23241f; --kbd: #30312b; color-scheme: dark; }
     * { box-sizing: border-box; }
     button, input { font: inherit; }
     .workspace { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; overflow: hidden; outline: none; background: var(--background); }
@@ -63,7 +63,7 @@ export class OrganizerApp extends LitElement {
     .stage { position: absolute; inset: 0; overflow: hidden; }
     .stage.file { overflow: auto; background: var(--file-background); }
     svg { display: block; width: 100%; height: 100%; }
-    .header-brand { justify-self: start; }
+    .header-brand { display: flex; align-items: center; gap: .15rem; justify-self: start; }
     .app-logo { display: flex; align-items: center; justify-content: center; width: 3.05rem; height: 3.05rem; flex: 0 0 3.05rem; padding: .28rem; border: 1px solid transparent; pointer-events: none; user-select: none; }
     .app-logo img { display: block; width: 100%; height: auto; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
     .switcher { min-width: 0; justify-self: center; }
@@ -73,13 +73,14 @@ export class OrganizerApp extends LitElement {
     .icon-button { width: 2.25rem; justify-content: center; padding: 0 !important; }
     .language-toggle { min-width: 2.5rem; justify-content: center; padding: 0 .55rem !important; }
     .icon-button svg, .context-toolbar svg, .sidebar-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
-    .map-controls { position: absolute; z-index: 12; top: 1rem; left: 1rem; display: flex; flex-direction: column; align-items: flex-start; gap: .45rem; }
-    .sidebar-toggle { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); cursor: pointer; transition: background-color .14s ease; }
+    .sidebar-toggle { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ink); cursor: pointer; transition: background-color .14s ease; }
     .node-actions { position: absolute; z-index: 12; left: 1rem; bottom: 1rem; display: flex; align-items: center; gap: .45rem; }
     .quick-action-button { display: inline-flex; align-items: center; gap: .55rem; min-height: 2rem; padding: .42rem .7rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .72rem; font-weight: 700; cursor: pointer; transition: background-color .14s ease; }
     .quick-action-button kbd { color: var(--ink); }
+    .add-node-button { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; min-height: 3.25rem; padding: 0; border-radius: 50%; color: var(--ink); }
+    .add-node-button svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; pointer-events: none; }
     .sidebar-toggle:hover, .quick-action-button:hover { background: var(--row-hover); }
-    .map-sidebar { display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
+    .map-sidebar { position: absolute; top: calc(100% + .45rem); left: 1rem; display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
     .map-sidebar h2 { margin: 0; padding: .85rem 1rem; border-bottom: 1px solid var(--panel-border); background: color-mix(in srgb, #88afe0 18%, transparent); color: var(--ink); font-size: .72rem; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
     .map-list { min-height: 0; overflow-y: auto; padding: .2rem .55rem .65rem; }
     .map-row { display: flex; align-items: center; width: 100%; min-height: 42px; padding: .35rem .55rem; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; }
@@ -102,9 +103,9 @@ export class OrganizerApp extends LitElement {
     .cell-outline { fill: none; stroke: var(--cell-gap); stroke-width: 12; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
     .cell-label { fill: var(--ink); font-weight: 760; text-anchor: middle; cursor: text; user-select: none; paint-order: stroke; stroke: var(--cell-gap); stroke-width: 3px; stroke-linejoin: round; }
     .selection { fill: none; stroke: var(--selection); stroke-width: 20; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
-    .edge-bands { cursor: cell; outline: none; }
-    .edge-strip { fill: transparent; stroke: none; transition: fill .14s ease; }
-    .edge-bands:hover .edge-strip, .edge-bands:focus-visible .edge-strip { fill: var(--edge-overlay-hover); }
+    .add-child-control { cursor: cell; outline: none; }
+    .add-child-target { fill: var(--add-child-idle); stroke: none; transition: fill .14s ease; }
+    .add-child-control:hover .add-child-target, .add-child-control:focus-visible .add-child-target { fill: var(--add-child-hover); }
     .add-child-sign { fill: #fff; font: 700 28px system-ui, sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; user-select: none; }
     :host([theme="dark"]) .add-child-sign { fill: var(--ink); }
     .tree-link { stroke: color-mix(in srgb, var(--ink) 25%, transparent); stroke-width: 2; vector-effect: non-scaling-stroke; }
@@ -146,19 +147,23 @@ export class OrganizerApp extends LitElement {
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     :focus-visible { outline: 2px solid #eb4d28; outline-offset: 2px; }
     @media (max-width: 600px) {
-      .app-header { gap: .35rem; min-height: 3.8rem; padding: .45rem .5rem; }
+      :host { -webkit-user-select: none; user-select: none; }
+      input { -webkit-user-select: text; user-select: text; }
+      .app-header { grid-template-columns: auto minmax(0, 1fr) auto; gap: .35rem; min-height: 3.8rem; padding: .45rem .5rem; }
       .app-logo { width: 2.55rem; height: 2.55rem; padding: .18rem; }
+      .switcher { width: 100%; }
       .top-actions { gap: .05rem; padding: .15rem; }
       .top-actions button { min-height: 2rem; }
       .icon-button { width: 2rem; }
       .language-toggle { min-width: 2.15rem; padding: 0 .35rem !important; font-size: .68rem !important; }
-      .map-controls { top: .65rem; left: .65rem; }
+      .sidebar-toggle { width: 2.25rem; height: 2.25rem; }
       .node-actions { left: .65rem; bottom: .65rem; }
       .shortcut-hints, .quick-action-button kbd { display: none; }
-      .map-sidebar { width: min(310px, calc(100vw - 1.3rem)); }
+      .map-sidebar { left: .5rem; width: min(310px, calc(100vw - 1rem)); }
       .file-tree { padding-top: .8rem; }
       .file-row { margin-left: calc(var(--depth) * 18px); }
-      .tree-node text { font-size: 10px; }
+      .tree-node text { font-size: 10px; cursor: pointer; pointer-events: none; }
+      .add-ring { display: none; }
     }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
   `;
@@ -760,23 +765,12 @@ export class OrganizerApp extends LitElement {
         const item = items[index], center = polygonCentroid(polygon), selected = item.id === this.selectedId;
         const label = fitLabel(item.name, Math.max(80, Math.sqrt(polygonArea(polygon)) * .7));
         const isParent = item.id === this.current.id;
-        const edges = viewportEdges(polygon, this.width, this.height);
-        const edgeSections = isParent ? [] : edges.map((edge) => ({
-          edge,
-          band: viewportEdgeBand(polygon, edge, this.width, this.height),
-          span: viewportEdgeSpan(polygon, edge, this.width, this.height),
-        })).filter(({ band }) => polygonArea(band) >= 1);
-        const markerSection = edgeSections.length ? edgeSections.reduce((longest, section) => section.span > longest.span ? section : longest) : undefined;
         const parentBand = isParent ? polygonBottomBand(polygon) : [];
-        const addSectionPath = isParent ? roundedPolygonPath(parentBand, 0) : viewportEdgeOverlayPath(polygon, edges, this.width, this.height);
-        const markerBand = isParent ? parentBand : markerSection?.band;
         const activateEdge = (event: Event) => { event.preventDefault(); event.stopPropagation(); this.openVoronoiNodeAndAddChild(item); };
+        const addMarker = isParent && polygonArea(parentBand) >= 1 ? polygonCentroid(parentBand) : null;
         return svg`<g class="cell ${item.marked ? "marked" : ""}" data-node-id=${item.id} tabindex="-1" role="option" aria-selected=${selected} @click=${() => this.select(item.id)} @dblclick=${() => { if (isParent) this.goBack(); else this.openVoronoiNode(item); }} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", item.id)}>
           <path class="cell-shape" d=${roundedPolygonPath(polygon)} fill=${NODE_PALETTE[nodeColorIndex(item)]}></path>
-          ${markerBand && polygonArea(markerBand) >= 1 ? svg`<g class="edge-bands" role="button" tabindex="0" aria-label=${this.t("openAndAddChild", { name: item.name })} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}><path class="edge-strip" fill-rule="evenodd" d=${addSectionPath}></path>${(() => {
-            const marker = polygonCentroid(markerBand);
-            return svg`<text class="add-child-sign" x=${marker.x} y=${marker.y} aria-hidden="true">+</text>`;
-          })()}</g>` : nothing}
+          ${addMarker ? svg`<g class="add-child-control" role="button" tabindex="0" aria-label=${this.t("openAndAddChild", { name: item.name })} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}><circle class="add-child-target" cx=${addMarker.x} cy=${addMarker.y} r="30"></circle><text class="add-child-sign" x=${addMarker.x} y=${addMarker.y} aria-hidden="true">+</text></g>` : nothing}
           ${selected ? svg`<path class="selection" d=${roundedPolygonPath(polygon)} clip-path=${`url(#edge-cell-${index})`}></path>` : nothing}
           <path class="cell-outline" d=${roundedPolygonPath(polygon)}></path>
           ${item.id !== this.draft?.id ? svg`<text class="cell-label" x=${center.x} y=${center.y} font-size=${label.size} dy=".35em" @dblclick=${(event: MouseEvent) => { event.stopPropagation(); this.beginEdit(item.id); }}>${label.text}</text>` : nothing}
@@ -898,17 +892,17 @@ export class OrganizerApp extends LitElement {
   render() {
     return html`<main class="workspace" lang=${this.language} tabindex="0" role="application" aria-label="Mapflowy" @pointerdown=${(event: PointerEvent) => this.workspacePointerDown(event)}>
       <header class="app-header">
-        <div class="header-brand"><span class="app-logo" aria-hidden="true"><img src="/icon.svg" width="80" height="34" alt="" draggable="false" /></span></div>
+        <div class="header-brand">
+          <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { if (this.newMapNamingId) { this.focusPendingMapName(); return; } this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
+          <span class="app-logo" aria-hidden="true"><img src="/icon.svg" width="80" height="34" alt="" draggable="false" /></span>
+          ${this.renderSidebar()}
+        </div>
         <div class="switcher"><view-switcher .view=${this.view} .language=${this.language} @view-change=${(event: CustomEvent<OrganizerView>) => this.chooseView(event.detail)}></view-switcher></div>
         <div class="top-actions"><button class="icon-button theme-toggle" aria-pressed=${this.theme === "dark"} aria-label=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} title=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} @click=${this.toggleTheme}>${this.renderIcon(this.theme === "dark" ? "sun" : "moon")}</button><button class="language-toggle" aria-label=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} title=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} @click=${() => this.setLanguage(this.language === "en" ? "es" : "en")}>${this.language === "en" ? "ES" : "EN"}</button></div>
       </header>
       <section class="visualization" aria-label=${this.t("displayMode")}>
         <div class="stage ${this.view === "file" ? "file" : ""}" @mousedown=${this.onNodeMouseDown} @auxclick=${this.onNodeAuxClick}>${this.view === "voronoi" ? this.renderVoronoi() : this.view === "tree" ? this.renderTree() : this.renderFileTree()}</div>
-        <div class="map-controls">
-          <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { if (this.newMapNamingId) { this.focusPendingMapName(); return; } this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
-          ${this.renderSidebar()}
-        </div>
-        <div class="node-actions"><button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}><kbd>A</kbd><span>${this.t("addNode")}</span></button></div>
+        <div class="node-actions"><button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}>${this.renderIcon("plus")}</button></div>
         ${this.renderContextToolbar()}
         ${this.renderShortcutHints()}
         ${this.depthLimitOpen ? html`<div class="modal-backdrop" @click=${(event: MouseEvent) => { if (event.target === event.currentTarget) this.depthLimitOpen = false; }}>
