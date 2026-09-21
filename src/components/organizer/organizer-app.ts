@@ -8,8 +8,6 @@ import {
   translate, viewportEdgeBand, viewportEdgeOverlayPath, viewportEdges, viewportEdgeSpan, voronoiPathForSelection, voronoiPolygons,
 } from "../../lib/organizer";
 import { MarkShortcut } from "../../lib/organizer/mark-shortcut";
-import { TouchGesture } from "../../lib/organizer/touch-gesture";
-import { mobileIndentActions } from "../../lib/organizer/mobile-actions";
 import type { OrganizerView } from "./view-switcher";
 
 const treeLevelSymbols = ["●", "◆", "■", "▲"] as const;
@@ -23,81 +21,6 @@ const viewShortcuts: Partial<Record<string, OrganizerView>> = { "1": "voronoi", 
 
 @customElement("organizer-app")
 export class OrganizerApp extends LitElement {
-  @property({ type: Boolean, reflect: true }) mobile = false;
-  private mobileQuery?: MediaQueryList;
-  private readonly gesture = new TouchGesture();
-  private gestureTimer?: number;
-  private gesturePointer?: number;
-  @state() private visualHeight = 0;
-  @state() private visualTop = 0;
-  private updateVisualViewport = (): void => {
-    this.visualHeight = window.visualViewport?.height ?? window.innerHeight;
-    this.visualTop = window.visualViewport?.offsetTop ?? 0;
-  };
-  private suppressNodeClickUntil = 0;
-  private updateMobile = (): void => { this.mobile = this.mobileQuery?.matches ?? false; this.cancelTouch(); };
-  private cancelTouch = (): void => { window.clearTimeout(this.gestureTimer); this.gesture.cancel(); this.gesturePointer = undefined; };
-  private mobileText(en: string, es: string): string { return this.language === 'es' ? es : en; }
-  private displayName(node: OrganizerNode): string {
-    if (!this.mobile || !this.tutorialOpen || this.tutorialDocument.customTextIds.includes(node.id)) return node.name;
-    const names: Record<string, string> = {
-      'tutorial-add-nodes': this.mobileText('Double tap to add a child', 'Doble toque para añadir un hijo'),
-      'tutorial-copy-delete': this.mobileText('Hold to copy or delete', 'Mantén pulsado para copiar o eliminar'),
-      'tutorial-keyboard': this.mobileText('Tap to select; hold for actions', 'Toca para seleccionar; mantén para ver acciones'),
-      'tutorial-strikethrough': this.mobileText('Hold and choose Mark', 'Mantén pulsado y elige Marcar'),
-      'tutorial-edit-nodes': this.mobileText('Hold and choose Edit', 'Mantén pulsado y elige Editar'),
-    };
-    return names[node.id] ?? node.name;
-  }
-
-  private touchTarget(event: Event): { kind: 'element' | 'map'; id: string } | undefined {
-    const path = event.composedPath();
-    if (path.some((target) => target instanceof Element && target.matches('input, button, .edge-bands, .mobile-parent-add'))) return;
-    const node = path.find((target): target is Element => target instanceof Element && target.hasAttribute('data-node-id'));
-    if (node) return { kind: 'element', id: node.getAttribute('data-node-id')! };
-    const map = path.find((target): target is Element => target instanceof Element && target.hasAttribute('data-map-id'));
-    if (map) return { kind: 'map', id: map.getAttribute('data-map-id')! };
-  }
-
-  private touchStart(event: PointerEvent): void {
-    if (!this.mobile || this.draft || this.editingMapId || this.depthLimitOpen || event.button !== 0) return;
-    if (!event.isPrimary) { this.cancelTouch(); return; }
-    const target = this.touchTarget(event);
-    if (!target) return;
-    this.gesturePointer = event.pointerId;
-    this.gesture.start(`${target.kind}:${target.id}`, event.clientX, event.clientY, event.timeStamp);
-    window.clearTimeout(this.gestureTimer);
-    this.gestureTimer = window.setTimeout(() => {
-      if (!this.gesture.hold()) return;
-      this.suppressNodeClickUntil = Date.now() + 800;
-      if (target.kind === 'element') this.selectedId = target.id;
-      this.contextMenu = { ...target, x: 0, y: 0 };
-    }, 500);
-  }
-
-  private touchMove(event: PointerEvent): void {
-    if (event.pointerId === this.gesturePointer && !this.gesture.move(event.clientX, event.clientY)) this.cancelTouch();
-  }
-
-  private touchEnd(event: PointerEvent): void {
-    if (event.pointerId !== this.gesturePointer) return;
-    window.clearTimeout(this.gestureTimer); this.gesturePointer = undefined;
-    const action = this.gesture.end(event.timeStamp), target = this.touchTarget(event);
-    this.suppressNodeClickUntil = Date.now() + 800;
-    if (!action || !target) return;
-    if (target.kind === 'map') { if (!this.newMapNamingId) this.switchMap(target.id); return; }
-    const entry = findEntry(this.root, target.id);
-    if (!entry) return;
-    this.select(target.id);
-    if (this.view !== 'voronoi') this.path = entry.path;
-    if (action === 'double') this.addChildToSelected();
-  }
-
-  private suppressTouchClick = (event: Event): void => {
-    if (this.mobile && Date.now() < this.suppressNodeClickUntil && this.touchTarget(event)) {
-      event.preventDefault(); event.stopImmediatePropagation();
-    }
-  };
   private readonly configRepository = createUserConfigRepository();
   private readonly initialConfig = this.configRepository.load();
   private readonly tutorialRepository = createTutorialRepository();
@@ -255,73 +178,24 @@ export class OrganizerApp extends LitElement {
       .tree-node text { font-size: 10px; }
     }
     @media (max-width: 480px) { .shortcut-hints { bottom: 8.5rem; } }
-    :host([mobile]) .topbar { top: max(.5rem, env(safe-area-inset-top)); left: max(.5rem, env(safe-area-inset-left)); right: max(.5rem, env(safe-area-inset-right)); }
-    :host([mobile]) .brand-location { max-width: none; }
-    :host([mobile]) .location-controls { position: fixed; left: .5rem; right: .5rem; top: calc(128px + env(safe-area-inset-top)); }
-    :host([mobile]) .crumbs:not(.crumb-measure) { width: 100%; min-height: 48px; overflow-x: auto; padding: 0 .5rem; scrollbar-width: thin; }
-    :host([mobile]) .crumb { flex-shrink: 0; min-height: 48px; max-width: 180px; padding-inline: .5rem; }
-    :host([mobile]) .switcher { top: calc(66px + env(safe-area-inset-top)); max-width: calc(100% - 1rem); }
-    :host([mobile]) .top-actions button { min-height: 48px; min-width: 48px; }
-    :host([mobile]) .stage { top: calc(184px + env(safe-area-inset-top)); bottom: calc(72px + env(safe-area-inset-bottom)); }
-    :host([mobile]) .file-tree { padding: .5rem; }
-    :host([mobile]) .file-row { min-height: 48px; margin-left: min(calc(var(--depth) * 12px), 30vw); }
-    :host([mobile]) .cell-label, :host([mobile]) .tree-node text { cursor: default; }
-    :host([mobile]) .tree-node text { font-size: 12px; }
-    :host([mobile]) button, :host([mobile]) .mobile-parent-add { touch-action: manipulation; }
-    :host([mobile]) .cell, :host([mobile]) .tree-node, :host([mobile]) .file-row, :host([mobile]) .map-row { -webkit-touch-callout: none; user-select: none; touch-action: pan-y pinch-zoom; }
-    :host([mobile]) .left-actions { left: max(.5rem, env(safe-area-inset-left)); bottom: max(.5rem, env(safe-area-inset-bottom)); flex-direction: row; gap: 8px; }
-    :host([mobile]) .quick-actions, :host([mobile]) .node-actions { flex-direction: row; gap: 8px; }
-    :host([mobile]) .sidebar-toggle, :host([mobile]) .quick-action-button { min-width: 48px; height: 48px; padding: 0; justify-content: center; box-shadow: none; }
-    :host([mobile]) .sidebar-toggle-label { display: none; }
-    :host([mobile]) .quick-action-button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    :host([mobile]) .map-sidebar { position: absolute; bottom: 56px; max-height: calc(100dvh - 260px); width: min(340px, calc(100vw - 1rem)); }
-    :host([mobile]) .map-row { min-height: 48px; }
-    :host([mobile]) .map-name-input { min-height: 48px; font-size: 16px; }
-    :host([mobile]) .map-name-confirm, :host([mobile]) .map-name-cancel { width: 48px; height: 48px; flex-basis: 48px; }
-    .mobile-indent { position: absolute; right: max(.5rem, env(safe-area-inset-right)); bottom: max(.5rem, env(safe-area-inset-bottom)); display: flex; gap: 8px; z-index: 12; }
-    .mobile-indent button, .mobile-editor-actions button { min-width: 48px; min-height: 48px; border: 1px solid var(--panel-border); border-radius: 12px; background: var(--panel); color: var(--ink); cursor: pointer; }
-    .mobile-indent button:disabled { opacity: .35; cursor: default; }
-    .mobile-shade { position: fixed; inset: 0; top: var(--visual-top, 0px); height: var(--visual-height, 100dvh); z-index: 65; background: #0006; display: flex; align-items: flex-end; justify-content: center; }
-    .mobile-sheet, :host([mobile]) .context-toolbar { position: relative; inset: auto; display: flex; flex-direction: column; width: min(100%, 480px); max-height: 90%; overflow-y: auto; padding: 16px 16px max(16px, env(safe-area-inset-bottom)); gap: 8px; border: 1px solid var(--panel-border); border-radius: 20px 20px 0 0; background: var(--dialog); color: var(--ink); box-shadow: none; }
-    .mobile-sheet h2 { margin: 0 0 8px; font-size: 1rem; overflow-wrap: anywhere; }
-    :host([mobile]) .context-toolbar button { display: flex; gap: 12px; width: 100%; min-height: 48px; flex-shrink: 0; padding: 8px 12px; border-radius: 8px; text-align: left; }
-    .mobile-sheet input { width: 100%; min-height: 48px; padding: 12px; font-size: 16px; border: 1px solid var(--panel-border); border-radius: 8px; background: var(--editor); color: var(--ink); }
-    .mobile-editor-actions { display: flex; justify-content: flex-end; gap: 8px; }
-    .mobile-editor-actions button { padding: 0 16px; }
-    :host([mobile]) .toast, :host([mobile]) .save-error { bottom: calc(80px + env(safe-area-inset-bottom)); }
-    :host([mobile]) .depth-limit-modal button { min-height: 48px; }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
   `;
 
   connectedCallback(): void {
     super.connectedCallback();
-    this.mobileQuery = window.matchMedia('(max-width: 768px), (pointer: coarse) and (hover: none)');
-    this.updateMobile(); this.mobileQuery.addEventListener('change', this.updateMobile);
-    this.updateVisualViewport();
-    window.visualViewport?.addEventListener('resize', this.updateVisualViewport);
-    window.visualViewport?.addEventListener('scroll', this.updateVisualViewport);
-    this.addEventListener('click', this.suppressTouchClick, true);
-    this.addEventListener('dblclick', this.suppressTouchClick, true);
     document.addEventListener("keydown", this.onKeyDown);
     document.addEventListener("keydown", this.onMarkKeyDown, true);
     document.addEventListener("pointerdown", this.resetMarkShortcut, true);
     document.addEventListener("focusout", this.resetMarkShortcut, true);
     window.addEventListener("blur", this.resetMarkShortcut);
-    window.addEventListener('blur', this.cancelTouch);
   }
 
   disconnectedCallback(): void {
-    this.cancelTouch(); this.mobileQuery?.removeEventListener('change', this.updateMobile);
-    window.visualViewport?.removeEventListener('resize', this.updateVisualViewport);
-    window.visualViewport?.removeEventListener('scroll', this.updateVisualViewport);
-    this.removeEventListener('click', this.suppressTouchClick, true);
-    this.removeEventListener('dblclick', this.suppressTouchClick, true);
     document.removeEventListener("keydown", this.onKeyDown);
     document.removeEventListener("keydown", this.onMarkKeyDown, true);
     document.removeEventListener("pointerdown", this.resetMarkShortcut, true);
     document.removeEventListener("focusout", this.resetMarkShortcut, true);
     window.removeEventListener("blur", this.resetMarkShortcut);
-    window.removeEventListener('blur', this.cancelTouch);
     this.resetMarkShortcut();
     this.resizeObserver?.disconnect();
     if (this.toastTimer) window.clearTimeout(this.toastTimer);
@@ -329,26 +203,21 @@ export class OrganizerApp extends LitElement {
   }
 
   protected firstUpdated(): void {
-    const workspace = this.renderRoot.querySelector<HTMLElement>(".stage")!;
+    const workspace = this.renderRoot.querySelector<HTMLElement>(".workspace")!;
     this.resizeObserver = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
-      this.width = Math.max(320, width); this.height = Math.max(this.mobile ? 120 : 420, height);
+      this.width = Math.max(320, width); this.height = Math.max(420, height);
     });
     this.resizeObserver.observe(workspace);
     void this.load();
   }
 
   protected updated(changed: PropertyValues): void {
-    if (['view', 'mobile', 'workspace', 'tutorialOpen', 'draft'].some((key) => changed.has(key))) this.cancelTouch();
-    if (this.mobile && (changed.has('path') || changed.has('mobile'))) requestAnimationFrame(() => {
-      const nav = this.renderRoot.querySelector<HTMLElement>('nav.crumbs');
-      if (nav) nav.scrollLeft = nav.scrollWidth;
-    });
     if (["selectedId", "view", "workspace", "tutorialOpen"].some((key) => changed.has(key))) this.resetMarkShortcut();
     const measure = this.renderRoot.querySelector<HTMLElement>(".crumb-measure");
     const location = this.renderRoot.querySelector<HTMLElement>(".location-controls");
     if (measure && location) {
-      this.compactBreadcrumbs = !this.mobile && this.path.length > 3 && measure.getBoundingClientRect().width > location.clientWidth;
+      this.compactBreadcrumbs = this.path.length > 3 && measure.getBoundingClientRect().width > location.clientWidth;
     }
     if (changed.has("draft") && this.draft) requestAnimationFrame(() => {
       const input = this.renderRoot.querySelector<HTMLInputElement>("[data-draft]");
@@ -369,18 +238,7 @@ export class OrganizerApp extends LitElement {
 
   private get root(): OrganizerNode { return this.tutorialOpen ? this.tutorialDocument.root : this.workspace.maps.find(({ id }) => id === this.workspace.activeMapId) ?? this.workspace.maps[0] ?? this.tutorialDocument.root; }
   private get current(): OrganizerNode { return this.path[this.path.length - 1]; }
-  private t(key: TranslationKey, values: Record<string, string | number> = {}): string {
-    if (this.mobile && this.tutorialOpen && typeof values.name === 'string') {
-      const node = flattenTree(this.root).find(({ node }) => node.name === values.name)?.node;
-      if (node) values = { ...values, name: this.displayName(node) };
-    }
-    if (this.mobile) {
-      if (key === 'newElementReady') return this.mobileText('Name your new node, then tap Save.', 'Escribe el nombre del nodo y toca Guardar.');
-      if (key === 'editing') return this.mobileText(`Editing ${values.name}. Tap Save to confirm.`, `Editando ${values.name}. Toca Guardar para confirmar.`);
-      if (key === 'treeViewReady') return this.mobileText('Tree view ready.', 'Vista Árbol lista.');
-    }
-    return translate(this.language, key, values);
-  }
+  private t(key: TranslationKey, values: Record<string, string | number> = {}): string { return translate(this.language, key, values); }
   private setStatus(message: string): void { this.status = message; }
 
   private showDepthLimit(): void {
@@ -617,7 +475,6 @@ export class OrganizerApp extends LitElement {
 
   private openContextMenu(event: MouseEvent, kind: ContextMenuState["kind"], id: string): void {
     event.preventDefault(); event.stopPropagation();
-    if (this.mobile) return;
     if (kind === "map" && this.newMapNamingId) { this.focusPendingMapName(); return; }
     if (this.draft) return;
     if (kind === "element") this.selectedId = id;
@@ -709,7 +566,6 @@ export class OrganizerApp extends LitElement {
     if (!name) { this.cancelDraft(); return; }
     const item = findEntry(this.root, this.draft.id)?.node;
     if (!item) { this.cancelDraft(); return; }
-    if (this.mobile && this.draft.mode === 'edit' && name === this.displayName(item) && name !== item.name) { this.cancelDraft(); return; }
     const { mode, parentId } = this.draft;
     item.name = name; const id = item.id; this.draft = null;
     if (this.tutorialOpen) {
@@ -737,7 +593,6 @@ export class OrganizerApp extends LitElement {
   }
 
   private draftKey(event: KeyboardEvent): void {
-    if (this.mobile && event.key === 'Tab') return;
     event.stopPropagation();
     if (event.key === "Enter") { event.preventDefault(); this.commitDraft(event.currentTarget as HTMLInputElement); }
     if (event.key === "Escape") { event.preventDefault(); this.cancelDraft(); }
@@ -856,15 +711,6 @@ export class OrganizerApp extends LitElement {
 
   private onKeyDown = (event: KeyboardEvent): void => {
     const target = event.composedPath()[0];
-    if (this.mobile && (this.contextMenu || this.draft)) {
-      if (event.key === 'Escape') { event.preventDefault(); this.contextMenu = null; if (this.draft) this.cancelDraft(); }
-      if (event.key === 'Tab') {
-        const controls = Array.from(this.renderRoot.querySelectorAll<HTMLElement>('.mobile-sheet button:not(:disabled), .mobile-sheet input'));
-        const index = controls.indexOf(target as HTMLElement);
-        if (controls.length) { event.preventDefault(); controls[(index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length].focus(); }
-      }
-      return;
-    }
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
     if (!this.isConnected) return;
     if (this.depthLimitOpen) {
@@ -950,7 +796,7 @@ export class OrganizerApp extends LitElement {
       <defs>${polygons.map((polygon, index) => svg`<clipPath id=${`edge-cell-${index}`} clipPathUnits="userSpaceOnUse"><path d=${roundedPolygonPath(polygon)}></path></clipPath>`)}</defs>
       ${polygons.map((polygon, index) => {
         const item = items[index], center = polygonCentroid(polygon), selected = item.id === this.selectedId;
-        const label = fitLabel(this.displayName(item), Math.max(80, Math.sqrt(polygonArea(polygon)) * .7));
+        const label = fitLabel(item.name, Math.max(80, Math.sqrt(polygonArea(polygon)) * .7));
         const isParent = item.id === this.current.id;
         const edges = viewportEdges(polygon, this.width, this.height);
         const edgeSections = isParent ? [] : edges.map((edge) => ({
@@ -963,23 +809,21 @@ export class OrganizerApp extends LitElement {
         const addSectionPath = isParent ? roundedPolygonPath(parentBand, 0) : viewportEdgeOverlayPath(polygon, edges, this.width, this.height);
         const markerBand = isParent ? parentBand : markerSection?.band;
         const activateEdge = (event: Event) => { event.preventDefault(); event.stopPropagation(); this.openVoronoiNodeAndAddChild(item); };
-        return svg`<g class="cell ${item.marked ? "marked" : ""}" data-node-id=${item.id} tabindex="-1" role="option" aria-selected=${selected} @click=${() => this.select(item.id)} @dblclick=${() => { if (this.mobile) return; if (isParent) this.goBack(); else this.openVoronoiNode(item); }} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", item.id)}>
+        return svg`<g class="cell ${item.marked ? "marked" : ""}" data-node-id=${item.id} tabindex="-1" role="option" aria-selected=${selected} @click=${() => this.select(item.id)} @dblclick=${() => { if (isParent) this.goBack(); else this.openVoronoiNode(item); }} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", item.id)}>
           <path class="cell-shape" d=${roundedPolygonPath(polygon)} fill=${NODE_PALETTE[nodeColorIndex(item)]}></path>
-          ${!this.mobile && markerBand && polygonArea(markerBand) >= 1 ? svg`<g class="edge-bands" role="button" tabindex="0" aria-label=${this.t("openAndAddChild", { name: item.name })} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}><path class="edge-strip" fill-rule="evenodd" d=${addSectionPath}></path>${(() => {
+          ${markerBand && polygonArea(markerBand) >= 1 ? svg`<g class="edge-bands" role="button" tabindex="0" aria-label=${this.t("openAndAddChild", { name: item.name })} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}><path class="edge-strip" fill-rule="evenodd" d=${addSectionPath}></path>${(() => {
             const marker = polygonCentroid(markerBand);
             return svg`<text class="add-child-sign" x=${marker.x} y=${marker.y} aria-hidden="true">+</text>`;
           })()}</g>` : nothing}
           ${selected ? svg`<path class="selection" d=${roundedPolygonPath(polygon)} clip-path=${`url(#edge-cell-${index})`}></path>` : nothing}
           <path class="cell-outline" d=${roundedPolygonPath(polygon)}></path>
-          ${this.mobile && isParent ? svg`<g class="mobile-parent-add" role="button" tabindex="0" aria-label=${this.t('addChildren')} transform=${`translate(${center.x}, ${center.y + 44})`} @click=${activateEdge} @keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') activateEdge(event); }}><circle r="24" fill="var(--panel)"></circle><path d="M-8 0H8M0 -8V8" stroke="var(--ink)" stroke-width="2" pointer-events="none"></path></g>` : nothing}
-          ${item.id !== this.draft?.id ? svg`<text class="cell-label" x=${center.x} y=${center.y} font-size=${label.size} dy=".35em" @dblclick=${(event: MouseEvent) => { if (this.mobile) return; event.stopPropagation(); this.beginEdit(item.id); }}>${label.text}</text>` : nothing}
+          ${item.id !== this.draft?.id ? svg`<text class="cell-label" x=${center.x} y=${center.y} font-size=${label.size} dy=".35em" @dblclick=${(event: MouseEvent) => { event.stopPropagation(); this.beginEdit(item.id); }}>${label.text}</text>` : nothing}
         </g>`;
       })}
     </svg>${this.renderFloatingEditor(sites, polygons)}`;
   }
 
   private renderFloatingEditor(sites: Array<Point & { id: string }>, polygons: Point[][]) {
-    if (this.mobile) return nothing;
     if (!this.draft || this.view === "file") return nothing;
     const index = sites.findIndex((site) => site.id === this.draft!.id);
     let position: Point | undefined;
@@ -997,14 +841,14 @@ export class OrganizerApp extends LitElement {
       ${layout.links.map(({ source, target }) => svg`<path class="tree-link" fill="none" d=${radialLinkPath(source, target, layout.centerX, layout.centerY, layout.outerRadiusX, layout.outerRadiusY)}></path>`)}
       ${layout.nodes.map((entry) => {
         const current = entry.node.id === this.current.id, selected = entry.node.id === this.selectedId, radius = entry.depth === 0 ? GRAPH_ROOT_RADIUS : 19;
-        const labelLines = graphNodeLabelLines(this.displayName(entry.node));
+        const labelLines = graphNodeLabelLines(entry.node.name);
         const labelY = entry.depth === 0 ? 39 : 34;
         return svg`<g class="tree-node ${current ? "current" : ""} ${entry.node.marked ? "marked" : ""}" data-node-id=${entry.node.id} tabindex="0" role="button" aria-label=${this.t("nodeLevel", { name: entry.node.name, level: entry.depth + 1 })} transform="translate(${entry.x} ${entry.y})" @click=${() => this.chooseTreeNode(entry)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") this.chooseTreeNode(entry); }}>
-          <title>${this.displayName(entry.node)}</title>
+          <title>${entry.node.name}</title>
           <circle class="core" r=${radius} fill=${NODE_PALETTE[nodeColorIndex(entry.node)]}></circle>
           ${selected ? svg`<circle r=${radius + 4} fill="none" stroke="var(--selection)" stroke-width="2"></circle>` : nothing}
-          ${this.mobile ? svg`<circle r="24" fill="transparent"></circle>` : svg`<path class="add-ring" d=${radialArcPath(radius + 8, 225, -45, true)} aria-label=${this.t("addChildren")} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}><title>${this.t("addChildren")}</title></path>`}
-          <text y=${labelY} @click=${(event: MouseEvent) => { if (this.mobile) return; event.stopPropagation(); this.beginEdit(entry.node.id); }}>${labelLines.map((line, index) => svg`<tspan x="0" dy=${labelLines.length === 1 ? "0" : index === 0 ? "-.55em" : "1.1em"}>${line}</tspan>`)}</text>
+          ${svg`<path class="add-ring" d=${radialArcPath(radius + 8, 225, -45, true)} aria-label=${this.t("addChildren")} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}><title>${this.t("addChildren")}</title></path>`}
+          <text y=${labelY} @click=${(event: MouseEvent) => { event.stopPropagation(); this.beginEdit(entry.node.id); }}>${labelLines.map((line, index) => svg`<tspan x="0" dy=${labelLines.length === 1 ? "0" : index === 0 ? "-.55em" : "1.1em"}>${line}</tspan>`)}</text>
         </g>`;
       })}
     </svg>${this.renderFloatingEditor([], [])}`;
@@ -1012,9 +856,9 @@ export class OrganizerApp extends LitElement {
 
   private renderFileTree() {
     return html`<div class="file-tree" role="tree" aria-label=${this.t("projectTree")}>${flattenTree(this.root).map((entry) => html`
-      <div class="file-row ${entry.node.id === this.selectedId ? "selected" : ""} ${entry.node.marked ? "marked" : ""}" data-node-id=${entry.node.id} tabindex="-1" style="--depth:${entry.depth}" role="treeitem" aria-level=${entry.depth + 1} aria-selected=${entry.node.id === this.selectedId} @click=${() => { if (!this.draft) { this.path = entry.path; this.select(entry.node.id); } }} @dblclick=${() => { if (!this.mobile) this.beginEdit(entry.node.id); }} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)}>
+      <div class="file-row ${entry.node.id === this.selectedId ? "selected" : ""} ${entry.node.marked ? "marked" : ""}" data-node-id=${entry.node.id} tabindex="-1" style="--depth:${entry.depth}" role="treeitem" aria-level=${entry.depth + 1} aria-selected=${entry.node.id === this.selectedId} @click=${() => { if (!this.draft) { this.path = entry.path; this.select(entry.node.id); } }} @dblclick=${() => this.beginEdit(entry.node.id)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)}>
         <span class="branch" style=${`color:${treeLevelColors[entry.depth % treeLevelColors.length]}`} aria-hidden="true">${treeLevelSymbols[entry.depth % treeLevelSymbols.length]}</span>
-        ${!this.mobile && entry.node.id === this.draft?.id ? html`<input data-draft class="file-editor" maxlength=${ELEMENT_TEXT_LIMIT} aria-label=${this.t(this.draft.mode === "edit" ? "editorEdit" : "editorNew")} .value=${this.draft.mode === "edit" ? entry.node.name : ""} @click=${(event: Event) => event.stopPropagation()} @keydown=${this.draftKey} @blur=${(event: FocusEvent) => this.commitDraft(event.currentTarget as HTMLInputElement)} />` : html`<span class="name" title=${entry.node.id === this.selectedId ? nothing : entry.node.name}>${this.displayName(entry.node)}</span><span class="meta">${entry.node.children.length ? this.t(entry.node.children.length === 1 ? "childCountOne" : "childCountMany", { count: entry.node.children.length }) : ""}</span>`}
+        ${entry.node.id === this.draft?.id ? html`<input data-draft class="file-editor" maxlength=${ELEMENT_TEXT_LIMIT} aria-label=${this.t(this.draft.mode === "edit" ? "editorEdit" : "editorNew")} .value=${this.draft.mode === "edit" ? entry.node.name : ""} @click=${(event: Event) => event.stopPropagation()} @keydown=${this.draftKey} @blur=${(event: FocusEvent) => this.commitDraft(event.currentTarget as HTMLInputElement)} />` : html`<span class="name" title=${entry.node.id === this.selectedId ? nothing : entry.node.name}>${entry.node.name}</span><span class="meta">${entry.node.children.length ? this.t(entry.node.children.length === 1 ? "childCountOne" : "childCountMany", { count: entry.node.children.length }) : ""}</span>`}
       </div>`)} </div>`;
   }
 
@@ -1038,7 +882,7 @@ export class OrganizerApp extends LitElement {
     return html`<aside class="map-sidebar" aria-label=${this.t("mapList")}>
       <h2>${this.t("mapList")}</h2>
       <div class="map-list">${this.workspace.maps.map((map) => html`
-        <div class="map-row ${!this.tutorialOpen && map.id === this.workspace.activeMapId ? "active" : ""}" data-map-id=${map.id} role="button" tabindex="0" aria-current=${!this.tutorialOpen && map.id === this.workspace.activeMapId ? "true" : nothing} @click=${() => this.switchMap(map.id)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "map", map.id)} @keydown=${(event: KeyboardEvent) => this.mapRowKey(event, map.id)}>
+        <div class="map-row ${!this.tutorialOpen && map.id === this.workspace.activeMapId ? "active" : ""}" role="button" tabindex="0" aria-current=${!this.tutorialOpen && map.id === this.workspace.activeMapId ? "true" : nothing} @click=${() => this.switchMap(map.id)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "map", map.id)} @keydown=${(event: KeyboardEvent) => this.mapRowKey(event, map.id)}>
           ${this.editingMapId === map.id ? html`<div class="map-name-editor" @click=${(event: Event) => event.stopPropagation()} @contextmenu=${(event: Event) => event.stopPropagation()}>
             <input data-map-edit class="map-name-input" maxlength=${ELEMENT_TEXT_LIMIT} .value=${map.name} aria-label=${this.t("mapText")} @keydown=${(event: KeyboardEvent) => this.mapRenameKey(event, map.id)} @blur=${(event: FocusEvent) => { if (this.newMapNamingId !== map.id) this.commitMapRename(event.currentTarget as HTMLInputElement, map.id); }} />
             <button class="map-name-confirm" aria-label=${this.t("confirmMapName")} title=${this.t("confirmMapName")} @keydown=${(event: KeyboardEvent) => event.stopPropagation()} @click=${(event: MouseEvent) => { event.stopPropagation(); this.confirmMapName(map.id); }}>${this.renderIcon("check")}</button>
@@ -1070,7 +914,6 @@ export class OrganizerApp extends LitElement {
   private renderContextToolbar() {
     const menu = this.contextMenu;
     if (!menu) return nothing;
-    if (this.mobile) return this.renderMobileMenu(menu);
     if (menu.kind === "element") {
       const entry = findEntry(this.root, menu.id);
       if (!entry) return nothing;
@@ -1090,87 +933,41 @@ export class OrganizerApp extends LitElement {
     </div>`;
   }
 
-  private renderMobileMenu(menu: ContextMenuState) {
-    const entry = menu.kind === 'element' ? findEntry(this.root, menu.id) : undefined;
-    const map = menu.kind === 'map' ? this.workspace.maps.find(({ id }) => id === menu.id) : undefined;
-    if (!entry && !map) return nothing;
-    const action = (label: string, icon: Parameters<OrganizerApp['renderIcon']>[0], run: () => void) => html`<button @click=${() => { this.contextMenu = null; run(); }}>${this.renderIcon(icon)}<span>${label}</span></button>`;
-    return html`<div class="mobile-shade" @click=${(event: Event) => { if (event.target === event.currentTarget) this.contextMenu = null; }}>
-      <section class="mobile-sheet context-toolbar" role="dialog" aria-modal="true" aria-label=${this.t(menu.kind === 'element' ? 'elementActions' : 'mapActions')}>
-        <h2>${entry ? this.displayName(entry.node) : map!.name}</h2>
-        ${entry ? html`
-          ${this.view === 'voronoi' ? action(this.t('openNode'), 'back', () => this.openVoronoiNode(entry.node)) : nothing}
-          ${action(this.t('addChildren'), 'plus', () => { this.selectedId = menu.id; this.addChildToSelected(); })}
-          ${action(this.t('edit'), 'edit', () => this.beginEdit(menu.id))}
-          ${action(this.t('copyName'), 'copy', () => void this.copyElementName(menu.id))}
-          ${action(entry.node.marked ? this.mobileText('Unmark', 'Desmarcar') : this.mobileText('Mark', 'Marcar'), 'check', () => { this.selectedId = menu.id; this.toggleMark(menu.id); })}
-          ${entry.parent ? action(this.t('delete'), 'trash', () => this.deleteElement(menu.id)) : nothing}
-        ` : html`
-          ${action(this.t('editName'), 'edit', () => this.beginMapRename(map!.id))}
-          ${action(this.t('duplicate'), 'duplicate', () => this.duplicateWorkspaceMap(map!.id))}
-          ${action(this.t('export'), 'download', () => this.downloadMap(map!))}
-          ${action(this.t('delete'), 'trash', () => this.deleteWorkspaceMap(map!.id))}
-        `}
-        ${action(this.t('close'), 'close', () => {})}
-      </section></div>`;
-  }
-
-  private renderMobileEditor() {
-    if (!this.mobile || !this.draft) return nothing;
-    const editing = this.draft.mode === 'edit';
-    const node = findEntry(this.root, this.draft.id)?.node;
-    return html`<div class="mobile-shade"><section class="mobile-sheet" role="dialog" aria-modal="true" aria-label=${this.t(editing ? 'editorEdit' : 'editorNew')}>
-      <h2>${this.t(editing ? 'editorEdit' : 'editorNew')}</h2>
-      <input data-draft maxlength=${ELEMENT_TEXT_LIMIT} aria-label=${this.t(editing ? 'editorEdit' : 'editorNew')} .value=${editing && node ? this.displayName(node) : ''} @keydown=${this.draftKey} />
-      <div class="mobile-editor-actions"><button @click=${this.cancelDraft}>${this.mobileText('Cancel', 'Cancelar')}</button><button @click=${() => { const input = this.renderRoot.querySelector<HTMLInputElement>('[data-draft]'); if (input) this.commitDraft(input); }}>${this.mobileText('Save', 'Guardar')}</button></div>
-    </section></div>`;
-  }
-
-  private renderMobileIndentControls() {
-    if (!this.mobile || this.view !== 'file') return nothing;
-    const { indent: canIndent, outdent: canOutdent } = mobileIndentActions(this.root, this.selectedId, !!this.draft);
-    return html`<div class="mobile-indent" role="group" aria-label=${this.mobileText('Move node', 'Mover nodo')}>
-      <button aria-label=${this.t('shortcutOutdent')} ?disabled=${!canOutdent || !!this.draft} @click=${this.outdentFile}>◀</button>
-      <button aria-label=${this.t('shortcutIndent')} ?disabled=${!canIndent || !!this.draft} @click=${this.indentFile}>▶</button>
-    </div>`;
-  }
-
   render() {
-    return html`<main class="workspace" style=${`--visual-height:${this.visualHeight}px;--visual-top:${this.visualTop}px`} lang=${this.language} tabindex="0" role="application" aria-label="Mapflowy" @pointerdown=${(event: PointerEvent) => { this.workspacePointerDown(event); this.touchStart(event); }} @pointermove=${this.touchMove} @pointerup=${this.touchEnd} @pointercancel=${this.cancelTouch}>
+    return html`<main class="workspace" lang=${this.language} tabindex="0" role="application" aria-label="Mapflowy" @pointerdown=${(event: PointerEvent) => this.workspacePointerDown(event)}>
       <div class="stage ${this.view === "file" ? "file" : ""}" @mousedown=${this.onNodeMouseDown} @auxclick=${this.onNodeAuxClick}>${this.view === "voronoi" ? this.renderVoronoi() : this.view === "tree" ? this.renderTree() : this.renderFileTree()}</div>
       <div class="topbar">
         <div class="brand-location">
         <div class="brand-controls">
           <span class="app-logo ${this.view === "voronoi" ? "voronoi" : ""}" aria-hidden="true"><img src="/icon.svg" width="80" height="34" alt="" draggable="false" /></span>
-          ${!this.mobile && this.view === "voronoi" && this.path.length > 1 ? html`<button class="back-button" aria-label=${this.t("goUpOneLevel")} title=${this.t("goBack")} @click=${this.goBack}>${this.renderIcon("back")}</button>` : nothing}
+          ${this.view === "voronoi" && this.path.length > 1 ? html`<button class="back-button" aria-label=${this.t("goUpOneLevel")} title=${this.t("goBack")} @click=${this.goBack}>${this.renderIcon("back")}</button>` : nothing}
         </div>
         <div class="location-controls">
           <div class="crumbs crumb-measure" aria-hidden="true">${this.path.map((node, index) => html`${index ? html`<span class="separator">/</span>` : nothing}<span class="crumb" aria-current=${index === this.path.length - 1 ? "location" : nothing}>${node.name}</span>`)}</div>
-          <nav class="crumbs" aria-label=${this.t("currentLocation")} title=${this.path.map((node) => this.displayName(node)).join(" / ")}>${this.path.map((node, index) => {
+          <nav class="crumbs" aria-label=${this.t("currentLocation")} title=${this.path.map((node) => node.name).join(" / ")}>${this.path.map((node, index) => {
             if (this.compactBreadcrumbs && index > 0 && index < this.path.length - 2) {
               return index === 1 ? html`<span class="separator" aria-hidden="true">/</span><span class="crumb-ellipsis" title=${this.path.slice(1, -2).map((ancestor) => ancestor.name).join(" / ")}>...</span>` : nothing;
             }
-            return html`${index ? html`<span class="separator" aria-hidden="true">/</span>` : nothing}<button class="crumb" title=${this.displayName(node)} aria-current=${index === this.path.length - 1 ? "location" : nothing} @click=${() => this.chooseBreadcrumb(node, index)}>${this.displayName(node)}</button>`;
+            return html`${index ? html`<span class="separator" aria-hidden="true">/</span>` : nothing}<button class="crumb" title=${node.name} aria-current=${index === this.path.length - 1 ? "location" : nothing} @click=${() => this.chooseBreadcrumb(node, index)}>${node.name}</button>`;
           })}</nav>
         </div>
         </div>
         <div class="top-actions"><button class="icon-button theme-toggle" aria-pressed=${this.theme === "dark"} aria-label=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} title=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} @click=${this.toggleTheme}>${this.renderIcon(this.theme === "dark" ? "sun" : "moon")}</button><button class="language-toggle" aria-label=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} title=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} @click=${() => this.setLanguage(this.language === "en" ? "es" : "en")}>${this.language === "en" ? "ES" : "EN"}</button></div>
       </div>
-      <div class="switcher"><view-switcher .view=${this.view} .language=${this.language} .mobile=${this.mobile} @view-change=${(event: CustomEvent<OrganizerView>) => this.chooseView(event.detail)}></view-switcher></div>
+      <div class="switcher"><view-switcher .view=${this.view} .language=${this.language} @view-change=${(event: CustomEvent<OrganizerView>) => this.chooseView(event.detail)}></view-switcher></div>
       <div class="left-actions">
         ${this.renderSidebar()}
         <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { if (this.newMapNamingId) { this.focusPendingMapName(); return; } this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}<span class="sidebar-toggle-label">${this.t("mapList")}</span></button>
         <div class="quick-actions">
-          <button class="quick-action-button new-map-button" aria-label=${this.t("createMap")} title=${this.t("createMap")} @click=${this.createMap}>${this.mobile ? html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4H4v16h16V10M19 2v8M15 6h8M8 9h3M8 13h8M8 17h5" /></svg>` : html`<kbd>N</kbd><span>${this.t("newMap")}</span>`}</button>
+          <button class="quick-action-button new-map-button" aria-label=${this.t("createMap")} title=${this.t("createMap")} @click=${this.createMap}><kbd>N</kbd><span>${this.t("newMap")}</span></button>
           <div class="node-actions">
-            <button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}>${this.mobile ? this.renderIcon('plus') : html`<kbd>A</kbd><span>${this.t("addNode")}</span>`}</button>
-            ${this.mobile ? nothing : html`<button class="quick-action-button edit-node-button" aria-label=${this.t("editElement")} title=${this.t("editElement")} @click=${() => this.beginEdit()}><kbd>E</kbd><span>${this.t("editElement")}</span></button>`}
+            <button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}><kbd>A</kbd><span>${this.t("addNode")}</span></button>
+            <button class="quick-action-button edit-node-button" aria-label=${this.t("editElement")} title=${this.t("editElement")} @click=${() => this.beginEdit()}><kbd>E</kbd><span>${this.t("editElement")}</span></button>
           </div>
         </div>
       </div>
       ${this.renderContextToolbar()}
-      ${this.mobile ? this.renderMobileIndentControls() : this.renderShortcutHints()}
-      ${this.renderMobileEditor()}
+      ${this.renderShortcutHints()}
       ${this.depthLimitOpen ? html`<div class="modal-backdrop" @click=${(event: MouseEvent) => { if (event.target === event.currentTarget) this.depthLimitOpen = false; }}>
         <section class="depth-limit-modal" role="alertdialog" aria-modal="true" aria-labelledby="depth-limit-title" aria-describedby="depth-limit-message">
           <h2 id="depth-limit-title">${this.t("depthLimitTitle")}</h2>
