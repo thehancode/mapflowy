@@ -16,7 +16,14 @@ export class ViewSwitcher extends LitElement {
     button[aria-pressed="true"] { background: var(--ink); color: var(--background); }
     .view-key { padding: .15rem .38rem; border: 1px solid var(--panel-border); border-bottom-width: 2px; border-radius: 5px; background: var(--kbd); color: var(--ink); font: 700 .72rem system-ui; }
     button:focus-visible { outline: 2px solid #eb4d28; outline-offset: 2px; }
-    @media (max-width: 520px) { button { padding: 0 .66rem; font-size: .7rem; } }
+    @media (max-width: 600px) {
+      div { gap: .08rem; padding: .18rem; }
+      button { min-height: 2rem; padding: 0 .42rem; font-size: .65rem; }
+      .view-key { display: none; }
+    }
+    @media (max-width: 380px) {
+      button { padding: 0 .28rem; font-size: .61rem; }
+    }
   `;
 
   private choose(view: OrganizerView): void {

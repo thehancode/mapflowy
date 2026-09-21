@@ -44,7 +44,6 @@ export class OrganizerApp extends LitElement {
   @state() private contextMenu: ContextMenuState | null = null;
   @state() private toast = "";
   @state() private storageSaveFailed = false;
-  @state() private compactBreadcrumbs = false;
   private readonly repository = createRepository();
   private resizeObserver?: ResizeObserver;
   private treeCycles = new Map<string, number>();
@@ -58,43 +57,28 @@ export class OrganizerApp extends LitElement {
     :host([theme="dark"]) { --ink: #f2f0e8; --selection: #b8bab2; --background: #151612; --file-background: #1b1c18; --panel: rgba(35,36,31,.9); --panel-border: rgba(242,240,232,.16); --shadow: rgba(0,0,0,.38); --muted: #aaa99f; --cell-gap: #151612; --edge-overlay-hover: color-mix(in srgb, var(--ink) 14%, transparent); --row-hover: rgba(255,255,255,.06); --row-selected: #292a24; --editor: rgba(38,39,34,.98); --dialog: #23241f; --kbd: #30312b; color-scheme: dark; }
     * { box-sizing: border-box; }
     button, input { font: inherit; }
-    .workspace { position: relative; width: 100%; height: 100%; overflow: hidden; outline: none; background: var(--background); }
+    .workspace { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; overflow: hidden; outline: none; background: var(--background); }
+    .app-header { position: relative; z-index: 20; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 1rem; min-height: 4.55rem; padding: .7rem 1rem; border-bottom: 1px solid var(--panel-border); background: var(--background); }
+    .visualization { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
     .stage { position: absolute; inset: 0; overflow: hidden; }
     .stage.file { overflow: auto; background: var(--file-background); }
     svg { display: block; width: 100%; height: 100%; }
-    .topbar { position: absolute; z-index: 10; top: 1rem; left: 1rem; right: 1rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; pointer-events: none; }
-    .brand-location { display: flex; flex: 1; align-items: flex-start; gap: .75rem; min-width: 0; max-width: calc(50% - 220px); }
-    .brand-controls { display: flex; width: 3.05rem; flex: 0 0 3.05rem; flex-direction: column; align-items: center; gap: .65rem; }
+    .header-brand { justify-self: start; }
     .app-logo { display: flex; align-items: center; justify-content: center; width: 3.05rem; height: 3.05rem; flex: 0 0 3.05rem; padding: .28rem; border: 1px solid transparent; pointer-events: none; user-select: none; }
-    .app-logo.voronoi { border-color: var(--panel-border); border-radius: 14px; background: color-mix(in srgb, var(--panel) 80%, white); box-shadow: 0 12px 36px var(--shadow); backdrop-filter: blur(16px); }
     .app-logo img { display: block; width: 100%; height: auto; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
-    .location-controls { position: relative; display: flex; flex: 1; flex-direction: column; align-items: flex-start; min-width: 0; gap: .65rem; pointer-events: none; }
-    .crumbs, .top-actions { pointer-events: auto; border: 1px solid var(--panel-border); background: var(--panel); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); }
-    .crumbs { display: flex; flex-wrap: nowrap; align-items: center; gap: .42rem; width: max-content; max-width: 100%; min-height: 44px; overflow: hidden; padding: .65rem .85rem; border-radius: 14px; font-size: .8rem; font-weight: 740; user-select: none; }
-    .crumbs > .separator, .crumb-ellipsis { flex-shrink: 0; }
-    .crumb-measure { position: absolute; visibility: hidden; pointer-events: none; max-width: none; width: max-content; }
-    .crumb-measure .crumb { flex-shrink: 0; }
-    .crumb-ellipsis { color: var(--muted); }
-    .crumb { min-width: 0; max-width: min(28vw, 260px); overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--muted); font-weight: 560; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; }
-    .crumb[aria-current="location"] { color: var(--ink); font-weight: 740; }
-    .crumb:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
-    .separator { opacity: .45; }
-    .top-actions { display: flex; gap: .25rem; padding: .25rem; border-radius: 999px; }
+    .switcher { min-width: 0; justify-self: center; }
+    .top-actions { display: flex; justify-self: end; gap: .25rem; padding: .25rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); }
     .top-actions a, .top-actions button { min-height: 2.25rem; display: inline-flex; align-items: center; padding: 0 .78rem; border: 0; border-radius: 999px; background: transparent; color: var(--ink); text-decoration: none; font-size: .75rem; font-weight: 750; cursor: pointer; }
     .top-actions a { background: var(--ink); color: var(--background); }
     .icon-button { width: 2.25rem; justify-content: center; padding: 0 !important; }
     .language-toggle { min-width: 2.5rem; justify-content: center; padding: 0 .55rem !important; }
-    .icon-button svg, .context-toolbar svg, .sidebar-toggle svg, .back-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
-    .switcher { position: absolute; z-index: 10; top: 1rem; left: 50%; transform: translateX(-50%); }
-    .left-actions { --left-action-gap: .45rem; position: absolute; z-index: 12; left: 1rem; bottom: 1rem; display: flex; flex-direction: column; align-items: flex-start; gap: var(--left-action-gap); }
-    .sidebar-toggle { display: inline-flex; align-items: center; gap: .55rem; min-height: 2.25rem; padding: 0 .75rem 0 .55rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); cursor: pointer; transition: background-color .14s ease; }
-    .sidebar-toggle-label { color: var(--muted); font-size: .72rem; font-weight: 700; }
-    .quick-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--left-action-gap); }
-    .node-actions { display: flex; align-items: center; gap: var(--left-action-gap); }
+    .icon-button svg, .context-toolbar svg, .sidebar-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    .map-controls { position: absolute; z-index: 12; top: 1rem; left: 1rem; display: flex; flex-direction: column; align-items: flex-start; gap: .45rem; }
+    .sidebar-toggle { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); cursor: pointer; transition: background-color .14s ease; }
+    .node-actions { position: absolute; z-index: 12; left: 1rem; bottom: 1rem; display: flex; align-items: center; gap: .45rem; }
     .quick-action-button { display: inline-flex; align-items: center; gap: .55rem; min-height: 2rem; padding: .42rem .7rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .72rem; font-weight: 700; cursor: pointer; transition: background-color .14s ease; }
     .quick-action-button kbd { color: var(--ink); }
     .sidebar-toggle:hover, .quick-action-button:hover { background: var(--row-hover); }
-    .back-button { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border: 1px solid var(--panel-border); border-radius: 50%; background: var(--panel); color: var(--ink); box-shadow: 0 10px 32px var(--shadow); backdrop-filter: blur(16px); pointer-events: auto; cursor: pointer; }
     .map-sidebar { display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
     .map-sidebar h2 { margin: 0; padding: .85rem 1rem; border-bottom: 1px solid var(--panel-border); background: color-mix(in srgb, #88afe0 18%, transparent); color: var(--ink); font-size: .72rem; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
     .map-list { min-height: 0; overflow-y: auto; padding: .2rem .55rem .65rem; }
@@ -102,6 +86,7 @@ export class OrganizerApp extends LitElement {
     .map-row:hover { background: var(--row-hover); }
     .map-row.active { border-color: var(--panel-border); background: var(--row-selected); }
     .map-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; font-weight: 720; }
+    .map-list .new-map-button { width: 100%; justify-content: center; margin-top: .25rem; box-shadow: none; }
     .map-name-editor { display: flex; align-items: center; gap: .35rem; width: 100%; }
     .map-name-input { min-width: 0; min-height: 32px; flex: 1; padding: 0 .5rem; border: 1px solid var(--panel-border); border-radius: 7px; background: var(--editor); color: var(--ink); outline: 0; font-weight: 700; }
     .map-name-confirm, .map-name-cancel { display: grid; place-items: center; width: 2rem; height: 2rem; flex: 0 0 2rem; padding: 0; border: 1px solid var(--panel-border); border-radius: 7px; background: var(--editor); color: var(--ink); cursor: pointer; }
@@ -130,7 +115,7 @@ export class OrganizerApp extends LitElement {
     .tree-node text { fill: var(--ink); font-size: 12px; font-weight: 750; text-anchor: middle; paint-order: stroke; stroke: var(--background); stroke-width: 3px; cursor: text; user-select: none; }
     .add-ring { fill: none; stroke: var(--ink); stroke-width: 8; stroke-linecap: round; opacity: .12; cursor: crosshair; vector-effect: non-scaling-stroke; }
     .add-ring:hover { opacity: .65; }
-    .file-tree { min-height: 100%; padding: 5.6rem 1.1rem 5.5rem; }
+    .file-tree { min-height: 100%; padding: 1.1rem 1.1rem 5.5rem; }
     .file-row { display: flex; align-items: center; min-height: 44px; margin-left: calc(var(--depth) * 28px); padding: .35rem .65rem; border: 1px solid transparent; border-radius: 9px; cursor: pointer; }
     .file-row:hover { background: var(--row-hover); }
     .file-row.selected { border-color: var(--panel-border); background: var(--row-selected); box-shadow: 0 3px 12px var(--shadow); }
@@ -160,24 +145,21 @@ export class OrganizerApp extends LitElement {
     kbd { padding: .15rem .38rem; border: 1px solid var(--panel-border); border-bottom-width: 2px; border-radius: 5px; background: var(--kbd); font: 700 .72rem system-ui; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     :focus-visible { outline: 2px solid #eb4d28; outline-offset: 2px; }
-    @media (max-width: 1000px) {
-      .switcher { top: 4.5rem; }
-      .brand-location { max-width: calc(100% - 110px); }
-    }
     @media (max-width: 600px) {
-      .topbar { top: .65rem; left: .65rem; right: .65rem; }
-      .switcher { top: 4.15rem; }
-      .brand-location { gap: .4rem; }
-      .crumbs { padding-inline: .55rem; }
-      .left-actions { left: .65rem; bottom: .65rem; }
-      .shortcut-hints { right: .65rem; bottom: .65rem; }
-      .shortcut-hint { max-width: calc(100vw - 1.3rem); }
+      .app-header { gap: .35rem; min-height: 3.8rem; padding: .45rem .5rem; }
+      .app-logo { width: 2.55rem; height: 2.55rem; padding: .18rem; }
+      .top-actions { gap: .05rem; padding: .15rem; }
+      .top-actions button { min-height: 2rem; }
+      .icon-button { width: 2rem; }
+      .language-toggle { min-width: 2.15rem; padding: 0 .35rem !important; font-size: .68rem !important; }
+      .map-controls { top: .65rem; left: .65rem; }
+      .node-actions { left: .65rem; bottom: .65rem; }
+      .shortcut-hints, .quick-action-button kbd { display: none; }
       .map-sidebar { width: min(310px, calc(100vw - 1.3rem)); }
-      .file-tree { padding-top: 8.2rem; }
+      .file-tree { padding-top: .8rem; }
       .file-row { margin-left: calc(var(--depth) * 18px); }
       .tree-node text { font-size: 10px; }
     }
-    @media (max-width: 480px) { .shortcut-hints { bottom: 8.5rem; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
   `;
 
@@ -203,22 +185,17 @@ export class OrganizerApp extends LitElement {
   }
 
   protected firstUpdated(): void {
-    const workspace = this.renderRoot.querySelector<HTMLElement>(".workspace")!;
+    const visualization = this.renderRoot.querySelector<HTMLElement>(".visualization")!;
     this.resizeObserver = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
-      this.width = Math.max(320, width); this.height = Math.max(420, height);
+      this.width = Math.max(320, width); this.height = Math.max(180, height);
     });
-    this.resizeObserver.observe(workspace);
+    this.resizeObserver.observe(visualization);
     void this.load();
   }
 
   protected updated(changed: PropertyValues): void {
     if (["selectedId", "view", "workspace", "tutorialOpen"].some((key) => changed.has(key))) this.resetMarkShortcut();
-    const measure = this.renderRoot.querySelector<HTMLElement>(".crumb-measure");
-    const location = this.renderRoot.querySelector<HTMLElement>(".location-controls");
-    if (measure && location) {
-      this.compactBreadcrumbs = this.path.length > 3 && measure.getBoundingClientRect().width > location.clientWidth;
-    }
     if (changed.has("draft") && this.draft) requestAnimationFrame(() => {
       const input = this.renderRoot.querySelector<HTMLInputElement>("[data-draft]");
       input?.focus();
@@ -771,21 +748,6 @@ export class OrganizerApp extends LitElement {
     const leaving = this.current; this.path = this.path.slice(0, -1); this.selectedId = leaving.id; this.setStatus(this.t("returnedTo", { name: this.current.name }));
   }
 
-  private chooseBreadcrumb(node: OrganizerNode, index: number): void {
-    if (this.draft) this.cancelDraft();
-    this.contextMenu = null;
-    if (this.view === "voronoi") {
-      this.path = this.path.slice(0, index + 1); this.selectedId = node.id;
-      this.setStatus(this.t("opened", { name: node.name }));
-      return;
-    }
-    this.selectedId = node.id; this.setStatus(this.t("elementSelected", { name: node.name }));
-    requestAnimationFrame(() => {
-      const target = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-node-id]")).find((element) => element.dataset.nodeId === node.id);
-      target?.scrollIntoView({ block: "nearest", inline: "nearest" });
-    });
-  }
-
   private chooseTreeNode(entry: LayoutEntry): void { this.path = entry.path; this.selectedId = entry.node.id; this.setStatus(this.t("nowCurrentLevel", { name: entry.node.name })); }
 
   private renderVoronoi() {
@@ -862,9 +824,8 @@ export class OrganizerApp extends LitElement {
       </div>`)} </div>`;
   }
 
-  private renderIcon(name: "menu" | "back" | "sun" | "moon" | "copy" | "trash" | "edit" | "duplicate" | "download" | "check" | "close" | "plus") {
+  private renderIcon(name: "menu" | "sun" | "moon" | "copy" | "trash" | "edit" | "duplicate" | "download" | "check" | "close" | "plus") {
     if (name === "menu") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>`;
-    if (name === "back") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6M9 12h10"></path></svg>`;
     if (name === "sun") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41"></path></svg>`;
     if (name === "moon") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.2A8.5 8.5 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2Z"></path></svg>`;
     if (name === "copy") return html`<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>`;
@@ -892,6 +853,7 @@ export class OrganizerApp extends LitElement {
         <div class="map-row ${this.tutorialOpen ? "active" : ""}" role="button" tabindex="0" aria-current=${this.tutorialOpen ? "true" : nothing} @click=${this.openTutorial} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.openTutorial(); } }}>
           <span class="map-row-label">Tutorial</span>
         </div>
+        <button class="quick-action-button new-map-button" aria-label=${this.t("createMap")} title=${this.t("createMap")} @click=${this.createMap}><kbd>N</kbd><span>${this.t("newMap")}</span></button>
       </div>
     </aside>`;
   }
@@ -935,48 +897,30 @@ export class OrganizerApp extends LitElement {
 
   render() {
     return html`<main class="workspace" lang=${this.language} tabindex="0" role="application" aria-label="Mapflowy" @pointerdown=${(event: PointerEvent) => this.workspacePointerDown(event)}>
-      <div class="stage ${this.view === "file" ? "file" : ""}" @mousedown=${this.onNodeMouseDown} @auxclick=${this.onNodeAuxClick}>${this.view === "voronoi" ? this.renderVoronoi() : this.view === "tree" ? this.renderTree() : this.renderFileTree()}</div>
-      <div class="topbar">
-        <div class="brand-location">
-        <div class="brand-controls">
-          <span class="app-logo ${this.view === "voronoi" ? "voronoi" : ""}" aria-hidden="true"><img src="/icon.svg" width="80" height="34" alt="" draggable="false" /></span>
-          ${this.view === "voronoi" && this.path.length > 1 ? html`<button class="back-button" aria-label=${this.t("goUpOneLevel")} title=${this.t("goBack")} @click=${this.goBack}>${this.renderIcon("back")}</button>` : nothing}
-        </div>
-        <div class="location-controls">
-          <div class="crumbs crumb-measure" aria-hidden="true">${this.path.map((node, index) => html`${index ? html`<span class="separator">/</span>` : nothing}<span class="crumb" aria-current=${index === this.path.length - 1 ? "location" : nothing}>${node.name}</span>`)}</div>
-          <nav class="crumbs" aria-label=${this.t("currentLocation")} title=${this.path.map((node) => node.name).join(" / ")}>${this.path.map((node, index) => {
-            if (this.compactBreadcrumbs && index > 0 && index < this.path.length - 2) {
-              return index === 1 ? html`<span class="separator" aria-hidden="true">/</span><span class="crumb-ellipsis" title=${this.path.slice(1, -2).map((ancestor) => ancestor.name).join(" / ")}>...</span>` : nothing;
-            }
-            return html`${index ? html`<span class="separator" aria-hidden="true">/</span>` : nothing}<button class="crumb" title=${node.name} aria-current=${index === this.path.length - 1 ? "location" : nothing} @click=${() => this.chooseBreadcrumb(node, index)}>${node.name}</button>`;
-          })}</nav>
-        </div>
-        </div>
+      <header class="app-header">
+        <div class="header-brand"><span class="app-logo" aria-hidden="true"><img src="/icon.svg" width="80" height="34" alt="" draggable="false" /></span></div>
+        <div class="switcher"><view-switcher .view=${this.view} .language=${this.language} @view-change=${(event: CustomEvent<OrganizerView>) => this.chooseView(event.detail)}></view-switcher></div>
         <div class="top-actions"><button class="icon-button theme-toggle" aria-pressed=${this.theme === "dark"} aria-label=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} title=${this.t(this.theme === "dark" ? "switchToLight" : "switchToDark")} @click=${this.toggleTheme}>${this.renderIcon(this.theme === "dark" ? "sun" : "moon")}</button><button class="language-toggle" aria-label=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} title=${this.t(this.language === "en" ? "switchToSpanish" : "switchToEnglish")} @click=${() => this.setLanguage(this.language === "en" ? "es" : "en")}>${this.language === "en" ? "ES" : "EN"}</button></div>
-      </div>
-      <div class="switcher"><view-switcher .view=${this.view} .language=${this.language} @view-change=${(event: CustomEvent<OrganizerView>) => this.chooseView(event.detail)}></view-switcher></div>
-      <div class="left-actions">
-        ${this.renderSidebar()}
-        <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { if (this.newMapNamingId) { this.focusPendingMapName(); return; } this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}<span class="sidebar-toggle-label">${this.t("mapList")}</span></button>
-        <div class="quick-actions">
-          <button class="quick-action-button new-map-button" aria-label=${this.t("createMap")} title=${this.t("createMap")} @click=${this.createMap}><kbd>N</kbd><span>${this.t("newMap")}</span></button>
-          <div class="node-actions">
-            <button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}><kbd>A</kbd><span>${this.t("addNode")}</span></button>
-            <button class="quick-action-button edit-node-button" aria-label=${this.t("editElement")} title=${this.t("editElement")} @click=${() => this.beginEdit()}><kbd>E</kbd><span>${this.t("editElement")}</span></button>
-          </div>
+      </header>
+      <section class="visualization" aria-label=${this.t("displayMode")}>
+        <div class="stage ${this.view === "file" ? "file" : ""}" @mousedown=${this.onNodeMouseDown} @auxclick=${this.onNodeAuxClick}>${this.view === "voronoi" ? this.renderVoronoi() : this.view === "tree" ? this.renderTree() : this.renderFileTree()}</div>
+        <div class="map-controls">
+          <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { if (this.newMapNamingId) { this.focusPendingMapName(); return; } this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
+          ${this.renderSidebar()}
         </div>
-      </div>
-      ${this.renderContextToolbar()}
-      ${this.renderShortcutHints()}
-      ${this.depthLimitOpen ? html`<div class="modal-backdrop" @click=${(event: MouseEvent) => { if (event.target === event.currentTarget) this.depthLimitOpen = false; }}>
-        <section class="depth-limit-modal" role="alertdialog" aria-modal="true" aria-labelledby="depth-limit-title" aria-describedby="depth-limit-message">
-          <h2 id="depth-limit-title">${this.t("depthLimitTitle")}</h2>
-          <p id="depth-limit-message">${this.t("depthLimitMessage", { count: MAX_TREE_LEVELS })}</p>
-          <button @click=${() => { this.depthLimitOpen = false; }}>${this.t("close")}</button>
-        </section>
-      </div>` : nothing}
-      ${this.storageSaveFailed ? html`<div class="save-error" role="alert">${this.t("saveError")}</div>` : nothing}
-      ${this.toast ? html`<div class="toast ${this.storageSaveFailed ? "raised" : ""}" role="status">${this.toast}</div>` : nothing}
+        <div class="node-actions"><button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}><kbd>A</kbd><span>${this.t("addNode")}</span></button></div>
+        ${this.renderContextToolbar()}
+        ${this.renderShortcutHints()}
+        ${this.depthLimitOpen ? html`<div class="modal-backdrop" @click=${(event: MouseEvent) => { if (event.target === event.currentTarget) this.depthLimitOpen = false; }}>
+          <section class="depth-limit-modal" role="alertdialog" aria-modal="true" aria-labelledby="depth-limit-title" aria-describedby="depth-limit-message">
+            <h2 id="depth-limit-title">${this.t("depthLimitTitle")}</h2>
+            <p id="depth-limit-message">${this.t("depthLimitMessage", { count: MAX_TREE_LEVELS })}</p>
+            <button @click=${() => { this.depthLimitOpen = false; }}>${this.t("close")}</button>
+          </section>
+        </div>` : nothing}
+        ${this.storageSaveFailed ? html`<div class="save-error" role="alert">${this.t("saveError")}</div>` : nothing}
+        ${this.toast ? html`<div class="toast ${this.storageSaveFailed ? "raised" : ""}" role="status">${this.toast}</div>` : nothing}
+      </section>
       <p class="sr-only" aria-live="polite">${this.status}</p>
     </main>`;
   }
