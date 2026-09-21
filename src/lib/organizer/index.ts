@@ -1,6 +1,7 @@
 export * from './types';
 export * from './tree';
 export * from './geometry';
+export * from './graph-camera';
 export * from './repository';
 export * from './user-config';
 export * from './i18n';

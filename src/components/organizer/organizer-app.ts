@@ -1,14 +1,15 @@
 import { LitElement, css, html, nothing, svg, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import "./view-switcher";
-import type { OrganizerLanguage, OrganizerNode, OrganizerWorkspaceDocument, Point, LayoutEntry, OrganizerTheme, TranslationKey, TutorialDocument } from "../../lib/organizer";
+import type { OrganizerLanguage, OrganizerNode, OrganizerWorkspaceDocument, Point, LayoutEntry, OrganizerTheme, RadialTreeLayout, TranslationKey, TutorialDocument } from "../../lib/organizer";
 import {
   canPlaceSubtreeAtDepth, circleLayout, collectNodeIds, createOnboardingRepository, createRepository, createTutorialDocument, createTutorialRepository, createUserConfigRepository, duplicateMap, ELEMENT_TEXT_LIMIT, emptyWorkspace, findEntry, flattenTree, fitLabel, GRAPH_ROOT_RADIUS, graphNodeLabelLines, localizeTutorialDocument, MAX_TREE_LEVELS, newChildColorIndex, newNodeId, NODE_PALETTE, nodeColorIndex, normalizeElementText,
-  polygonArea, polygonBottomBand, polygonCentroid, radialArcPath, radialLinkPath, radialTreeLayout, removeWorkspaceMap, roundedPolygonPath, visibleItems,
+  graphCameraForSelection, mobileGraphScene, polygonArea, polygonBottomBand, polygonCentroid, radialArcPath, radialLinkPath, radialTreeLayout, removeWorkspaceMap, roundedPolygonPath, visibleItems,
   translate, voronoiPathForSelection, voronoiPolygons,
 } from "../../lib/organizer";
 import { MarkShortcut } from "../../lib/organizer/mark-shortcut";
 import type { OrganizerView } from "./view-switcher";
+import type { GraphNavigationAdapter, OrganizerSession } from "./navigation-extension";
 
 const treeLevelSymbols = ["●", "◆", "■", "▲"] as const;
 const treeLevelColors = ["#e45745", "#db8437", "#c2a12f", "#79a944", "#3e9f70", "#329a98", "#4089c7", "#5d70c5", "#8860bd", "#ad5da5", "#c65e7b", "#a46d52"] as const;
@@ -21,10 +22,12 @@ const viewShortcuts: Partial<Record<string, OrganizerView>> = { "1": "voronoi", 
 
 @customElement("organizer-app")
 export class OrganizerApp extends LitElement {
-  private readonly configRepository = createUserConfigRepository();
+  @property({ attribute: false }) session?: OrganizerSession;
+  @property({ attribute: false }) graphNavigation?: GraphNavigationAdapter;
+  private configRepository = createUserConfigRepository({ storage: { getItem: () => null, setItem: () => {} } });
   private readonly initialConfig = this.configRepository.load();
-  private readonly tutorialRepository = createTutorialRepository();
-  private readonly onboardingRepository = createOnboardingRepository();
+  private tutorialRepository = createTutorialRepository({ storage: null });
+  private onboardingRepository = createOnboardingRepository({ storage: null });
   @property({ reflect: true }) theme: OrganizerTheme = this.initialConfig.theme;
   @property({ reflect: true }) language: OrganizerLanguage = this.initialConfig.language;
   @state() private workspace: OrganizerWorkspaceDocument = emptyWorkspace();
@@ -44,7 +47,8 @@ export class OrganizerApp extends LitElement {
   @state() private contextMenu: ContextMenuState | null = null;
   @state() private toast = "";
   @state() private storageSaveFailed = false;
-  private readonly repository = createRepository();
+  @state() private graphFocusId = "";
+  private repository = createRepository({ storage: null });
   private resizeObserver?: ResizeObserver;
   private treeCycles = new Map<string, number>();
   private toastTimer?: number;
@@ -75,6 +79,8 @@ export class OrganizerApp extends LitElement {
     .icon-button svg, .context-toolbar svg, .sidebar-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
     .sidebar-toggle { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ink); cursor: pointer; transition: background-color .14s ease; }
     .node-actions { position: absolute; z-index: 12; left: 1rem; bottom: 1rem; display: flex; align-items: center; gap: .45rem; }
+    .node-actions.with-navigation { flex-direction: column; }
+    .node-actions button:disabled { opacity: .35; cursor: default; }
     .quick-action-button { display: inline-flex; align-items: center; gap: .55rem; min-height: 2rem; padding: .42rem .7rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .72rem; font-weight: 700; cursor: pointer; transition: background-color .14s ease; }
     .quick-action-button kbd { color: var(--ink); }
     .add-node-button { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; min-height: 3.25rem; padding: 0; border-radius: 50%; color: var(--ink); }
@@ -109,6 +115,8 @@ export class OrganizerApp extends LitElement {
     .add-child-sign { fill: #fff; font: 700 28px system-ui, sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; user-select: none; }
     :host([theme="dark"]) .add-child-sign { fill: var(--ink); }
     .tree-link { stroke: color-mix(in srgb, var(--ink) 25%, transparent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+    .graph-camera { transform-box: view-box; transform-origin: 0 0; transition: transform .22s ease-out; will-change: transform; }
+    .graph-camera.instant { transition: none; }
     .tree-node { cursor: pointer; }
     .tree-node:focus { outline: none; }
     .tree-node .core { stroke: var(--cell-gap); stroke-width: 4; vector-effect: non-scaling-stroke; }
@@ -169,6 +177,14 @@ export class OrganizerApp extends LitElement {
   `;
 
   connectedCallback(): void {
+    const options = this.session ? { storage: this.session.storage } : {};
+    this.configRepository = createUserConfigRepository(options);
+    this.repository = createRepository(options);
+    this.tutorialRepository = createTutorialRepository(options);
+    this.onboardingRepository = createOnboardingRepository(options);
+    const config = this.configRepository.load();
+    this.theme = config.theme;
+    this.language = config.language;
     super.connectedCallback();
     document.addEventListener("keydown", this.onKeyDown);
     document.addEventListener("keydown", this.onMarkKeyDown, true);
@@ -178,6 +194,7 @@ export class OrganizerApp extends LitElement {
   }
 
   disconnectedCallback(): void {
+    this.graphNavigation?.disconnect();
     document.removeEventListener("keydown", this.onKeyDown);
     document.removeEventListener("keydown", this.onMarkKeyDown, true);
     document.removeEventListener("pointerdown", this.resetMarkShortcut, true);
@@ -200,6 +217,7 @@ export class OrganizerApp extends LitElement {
   }
 
   protected updated(changed: PropertyValues): void {
+    this.graphNavigation?.attach(this);
     if (["selectedId", "view", "workspace", "tutorialOpen"].some((key) => changed.has(key))) this.resetMarkShortcut();
     if (changed.has("draft") && this.draft) requestAnimationFrame(() => {
       const input = this.renderRoot.querySelector<HTMLInputElement>("[data-draft]");
@@ -256,14 +274,16 @@ export class OrganizerApp extends LitElement {
   private async load(): Promise<void> {
     const firstVisit = this.onboardingRepository.isFirstVisit();
     this.workspace = await this.repository.load();
+    if (this.session) this.workspace = structuredClone(this.session.workspace);
     this.tutorialDocument = this.tutorialRepository.load(this.language);
     this.tutorialOpen = firstVisit || this.workspace.maps.length === 0;
+    if (this.session) this.tutorialOpen = false;
     this.sidebarOpen = false;
     if (firstVisit) {
       this.view = "tree";
       this.onboardingRepository.markSeen();
     }
-    this.path = [this.root]; this.selectedId = this.root.id; this.treeCycles.clear();
+    this.path = [this.root]; this.selectedId = this.root.id; this.graphFocusId = this.root.id; this.treeCycles.clear();
     this.setStatus(this.t("loaded", { name: this.root.name }));
   }
 
@@ -279,7 +299,7 @@ export class OrganizerApp extends LitElement {
   }
 
   private resetToRoot(message: string): void {
-    this.path = [this.root]; this.selectedId = this.root.id; this.draft = null; this.contextMenu = null; this.treeCycles.clear();
+    this.path = [this.root]; this.selectedId = this.root.id; this.graphFocusId = this.root.id; this.draft = null; this.contextMenu = null; this.treeCycles.clear();
     this.setStatus(message);
   }
 
@@ -446,7 +466,7 @@ export class OrganizerApp extends LitElement {
     const name = entry.node.name;
     entry.parent.children = entry.parent.children.filter((node) => node.id !== id);
     const parent = findEntry(this.root, entry.parent.id)!;
-    this.path = parent.path; this.selectedId = parent.node.id; this.treeCycles.clear(); this.persist();
+    this.path = parent.path; this.selectedId = parent.node.id; this.graphFocusId = parent.node.id; this.treeCycles.clear(); this.persist();
     this.setStatus(this.t("removed", { name }));
   }
 
@@ -494,6 +514,7 @@ export class OrganizerApp extends LitElement {
     if (view === "voronoi" && this.view !== "voronoi") {
       this.path = voronoiPathForSelection(this.root, this.selectedId);
     }
+    if (view === "tree") this.graphFocusId = this.selectedId;
     this.view = view;
     this.setStatus(view === "tree" ? this.t("completeGraphView") : view === "file" ? this.t("treeViewReady") : this.t("currentLevel", { name: this.current.name }));
     this.renderRoot.querySelector<HTMLElement>(".workspace")?.focus();
@@ -509,6 +530,7 @@ export class OrganizerApp extends LitElement {
     parent.children.splice(insertionIndex, 0, item);
     this.draft = { id: item.id, parentId: parent.id, restoreId, mode: "create" };
     this.selectedId = item.id; this.treeCycles.clear(); this.requestUpdate();
+    if (this.view === "tree") this.graphFocusId = item.id;
     this.setStatus(this.t("newElementReady"));
   }
 
@@ -557,6 +579,7 @@ export class OrganizerApp extends LitElement {
       ? findEntry(this.root, id)!
       : findEntry(this.root, mode === "create" ? parentId : id)!;
     this.selectedId = entry.node.id;
+    if (this.view === "tree") this.graphFocusId = entry.node.id;
     if (this.view !== "voronoi") this.path = entry.path;
     this.persist(); this.setStatus(this.t(mode === "edit" ? "renamed" : "created", { name }));
     if (this.view === "file" && mode === "create") this.focusNode(id);
@@ -571,7 +594,7 @@ export class OrganizerApp extends LitElement {
     const parent = findEntry(this.root, parentId)?.node;
     if (parent) parent.children = parent.children.filter((child) => child.id !== id);
     this.draft = null; const restored = findEntry(this.root, restoreId) ?? findEntry(this.root, parentId)!;
-    this.path = restored.path; this.selectedId = restored.node.id; this.requestUpdate(); this.setStatus(this.t("newElementCancelled"));
+    this.path = restored.path; this.selectedId = restored.node.id; this.graphFocusId = restored.node.id; this.requestUpdate(); this.setStatus(this.t("newElementCancelled"));
   }
 
   private draftKey(event: KeyboardEvent): void {
@@ -618,7 +641,7 @@ export class OrganizerApp extends LitElement {
   }
 
   private moveTree(key: string): void {
-    const layout = radialTreeLayout(this.root, this.width, this.height);
+    const layout = this.width <= 600 ? mobileGraphScene(this.root, this.width, this.height).layout : radialTreeLayout(this.root, this.width, this.height);
     const selected = layout.nodes.find((entry) => entry.node.id === this.selectedId) ?? layout.nodes.find((entry) => entry.node.id === this.current.id);
     if (!selected) return;
     const allowed = new Set([...(selected.parent ? [selected.parent.id] : []), ...selected.node.children.map((node) => node.id)]);
@@ -630,7 +653,7 @@ export class OrganizerApp extends LitElement {
     if (!candidates.length) return;
     const cycleKey = `${selected.node.id}:${key}`, cycle = (this.treeCycles.get(cycleKey) ?? 0) % candidates.length;
     this.treeCycles.set(cycleKey, (cycle + 1) % candidates.length);
-    const next = candidates[cycle].entry; this.path = next.path; this.selectedId = next.node.id;
+    const next = candidates[cycle].entry; this.path = next.path; this.selectedId = next.node.id; this.graphFocusId = next.node.id;
     this.setStatus(this.t("currentNode", { name: next.node.name }) + (candidates.length > 1 ? this.t("connectedChoice", { current: cycle + 1, total: candidates.length }) : ""));
   }
 
@@ -753,7 +776,12 @@ export class OrganizerApp extends LitElement {
     const leaving = this.current; this.path = this.path.slice(0, -1); this.selectedId = leaving.id; this.setStatus(this.t("returnedTo", { name: this.current.name }));
   }
 
-  private chooseTreeNode(entry: LayoutEntry): void { this.path = entry.path; this.selectedId = entry.node.id; this.setStatus(this.t("nowCurrentLevel", { name: entry.node.name })); }
+  focusGraphNode(id: string): void {
+    const entry = findEntry(this.root, id);
+    if (entry) this.chooseTreeNode(entry);
+  }
+
+  private chooseTreeNode(entry: Pick<LayoutEntry, "node" | "path">): void { this.graphNavigation?.select(entry.node.id); this.path = entry.path; this.selectedId = entry.node.id; this.graphFocusId = entry.node.id; this.setStatus(this.t("nowCurrentLevel", { name: entry.node.name })); }
 
   private renderVoronoi() {
     const items = visibleItems(this.current), points = circleLayout(items.length);
@@ -779,11 +807,14 @@ export class OrganizerApp extends LitElement {
     </svg>${this.renderFloatingEditor(sites, polygons)}`;
   }
 
-  private renderFloatingEditor(sites: Array<Point & { id: string }>, polygons: Point[][]) {
+  private renderFloatingEditor(sites: Array<Point & { id: string }>, polygons: Point[][], treeLayout?: RadialTreeLayout, camera: Point = { x: 0, y: 0 }) {
     if (!this.draft || this.view === "file") return nothing;
     const index = sites.findIndex((site) => site.id === this.draft!.id);
     let position: Point | undefined;
-    if (this.view === "tree") position = radialTreeLayout(this.root, this.width, this.height).nodes.find((entry) => entry.node.id === this.draft!.id);
+    if (this.view === "tree") {
+      const entry = (treeLayout ?? radialTreeLayout(this.root, this.width, this.height)).nodes.find(({ node }) => node.id === this.draft!.id);
+      if (entry) position = { x: entry.x - camera.x, y: entry.y - camera.y };
+    }
     else if (index >= 0) position = polygonCentroid(polygons[index]);
     if (!position) return nothing;
     const editing = this.draft.mode === "edit";
@@ -792,22 +823,31 @@ export class OrganizerApp extends LitElement {
   }
 
   private renderTree() {
-    const layout = radialTreeLayout(this.root, this.width, this.height);
-    return html`<svg viewBox="0 0 ${this.width} ${this.height}" role="img" aria-label=${this.t("completeProjectGraph")}>
-      ${layout.links.map(({ source, target }) => svg`<path class="tree-link" fill="none" d=${radialLinkPath(source, target, layout.centerX, layout.centerY, layout.outerRadiusX, layout.outerRadiusY)}></path>`)}
-      ${layout.nodes.map((entry) => {
-        const current = entry.node.id === this.current.id, selected = entry.node.id === this.selectedId, radius = entry.depth === 0 ? GRAPH_ROOT_RADIUS : 19;
-        const labelLines = graphNodeLabelLines(entry.node.name);
-        const labelY = entry.depth === 0 ? 39 : 34;
-        return svg`<g class="tree-node ${current ? "current" : ""} ${entry.node.marked ? "marked" : ""}" data-node-id=${entry.node.id} tabindex="0" role="button" aria-label=${this.t("nodeLevel", { name: entry.node.name, level: entry.depth + 1 })} transform="translate(${entry.x} ${entry.y})" @click=${() => this.chooseTreeNode(entry)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") this.chooseTreeNode(entry); }}>
-          <title>${entry.node.name}</title>
-          <circle class="core" r=${radius} fill=${NODE_PALETTE[nodeColorIndex(entry.node)]}></circle>
-          ${selected ? svg`<circle r=${radius + 4} fill="none" stroke="var(--selection)" stroke-width="2"></circle>` : nothing}
-          ${svg`<path class="add-ring" d=${radialArcPath(radius + 8, 225, -45, true)} aria-label=${this.t("addChildren")} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}><title>${this.t("addChildren")}</title></path>`}
-          <text y=${labelY} @click=${(event: MouseEvent) => { event.stopPropagation(); this.beginEdit(entry.node.id); }}>${labelLines.map((line, index) => svg`<tspan x="0" dy=${labelLines.length === 1 ? "0" : index === 0 ? "-.55em" : "1.1em"}>${line}</tspan>`)}</text>
-        </g>`;
-      })}
-    </svg>${this.renderFloatingEditor([], [])}`;
+    const mobile = this.width <= 600 || !!this.graphNavigation;
+    const scene = mobile
+      ? mobileGraphScene(this.root, this.width, this.height)
+      : { layout: radialTreeLayout(this.root, this.width, this.height), width: this.width, height: this.height };
+    const layout = scene.layout;
+    const automatic = mobile ? graphCameraForSelection(scene, this.graphFocusId || this.selectedId, this.width, this.height) : { x: 0, y: 0 };
+    const camera = this.graphNavigation?.resolve({ scene, width: this.width, height: this.height, selectedId: this.selectedId, focusId: this.graphFocusId, automatic, editing: !!this.draft }) ?? automatic;
+    return html`<svg data-graph-canvas style=${this.graphNavigation ? "touch-action:none" : ""} viewBox="0 0 ${this.width} ${this.height}" role="img" aria-label=${this.t("completeProjectGraph")}>
+      <g class="graph-camera ${this.draft || this.graphNavigation?.instant ? "instant" : ""}" style=${`transform:translate(${-camera.x}px,${-camera.y}px)`}>
+        ${layout.links.map(({ source, target }) => svg`<path class="tree-link" fill="none" d=${radialLinkPath(source, target, layout.centerX, layout.centerY, layout.outerRadiusX, layout.outerRadiusY)}></path>`)}
+        ${layout.nodes.map((entry) => {
+          const current = entry.node.id === this.current.id, selected = entry.node.id === this.selectedId, radius = entry.depth === 0 ? GRAPH_ROOT_RADIUS : 19;
+          const labelLines = graphNodeLabelLines(entry.node.name);
+          const labelY = entry.depth === 0 ? 39 : 34;
+          return svg`<g class="tree-node ${current ? "current" : ""} ${entry.node.marked ? "marked" : ""}" data-node-id=${entry.node.id} tabindex="0" role="button" aria-label=${this.t("nodeLevel", { name: entry.node.name, level: entry.depth + 1 })} transform="translate(${entry.x} ${entry.y})" @click=${() => this.chooseTreeNode(entry)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") this.chooseTreeNode(entry); }}>
+            <title>${entry.node.name}</title>
+            <circle class="core" r=${radius} fill=${NODE_PALETTE[nodeColorIndex(entry.node)]}></circle>
+            ${selected ? svg`<circle r=${radius + 4} fill="none" stroke="var(--selection)" stroke-width="2"></circle>` : nothing}
+            ${this.graphNavigation ? nothing : svg`<path class="add-ring" d=${radialArcPath(radius + 8, 225, -45, true)} aria-label=${this.t("addChildren")} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}><title>${this.t("addChildren")}</title></path>`}
+            <text style=${this.graphNavigation ? "pointer-events:auto" : ""} y=${labelY} @click=${(event: MouseEvent) => { event.stopPropagation(); if (this.graphNavigation) this.chooseTreeNode(entry); else this.beginEdit(entry.node.id); }}>${labelLines.map((line, index) => svg`<tspan x="0" dy=${labelLines.length === 1 ? "0" : index === 0 ? "-.55em" : "1.1em"}>${line}</tspan>`)}</text>
+          </g>`;
+        })}
+      </g>
+      ${this.graphNavigation?.overlay() ?? nothing}
+    </svg>${this.renderFloatingEditor([], [], layout, camera)}`;
   }
 
   private renderFileTree() {
@@ -902,7 +942,7 @@ export class OrganizerApp extends LitElement {
       </header>
       <section class="visualization" aria-label=${this.t("displayMode")}>
         <div class="stage ${this.view === "file" ? "file" : ""}" @mousedown=${this.onNodeMouseDown} @auxclick=${this.onNodeAuxClick}>${this.view === "voronoi" ? this.renderVoronoi() : this.view === "tree" ? this.renderTree() : this.renderFileTree()}</div>
-        <div class="node-actions"><button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}>${this.renderIcon("plus")}</button></div>
+        <div class="node-actions ${this.graphNavigation && this.view === "tree" ? "with-navigation" : ""}">${this.view === "tree" ? this.graphNavigation?.actions?.() ?? nothing : nothing}<button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}>${this.renderIcon("plus")}</button></div>
         ${this.renderContextToolbar()}
         ${this.renderShortcutHints()}
         ${this.depthLimitOpen ? html`<div class="modal-backdrop" @click=${(event: MouseEvent) => { if (event.target === event.currentTarget) this.depthLimitOpen = false; }}>
