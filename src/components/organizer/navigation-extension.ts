@@ -2,7 +2,7 @@ import type { OrganizerApp } from "./organizer-app";
 import type { OrganizerNode, OrganizerWorkspaceDocument, Point, LayoutEntry } from "../../lib/organizer";
 import type { MobileGraphScene } from "../../lib/organizer/graph-camera";
 
-/** Optional embedding hooks; the normal organizer requires neither. */
+/** Storage override for isolated sessions and fixtures. */
 export interface OrganizerSession { storage: Storage; workspace: OrganizerWorkspaceDocument }
 export interface GraphFrame {
   scene: MobileGraphScene;

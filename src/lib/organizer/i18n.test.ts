@@ -7,10 +7,10 @@ describe("organizer translations", () => {
   });
 
   it("uses the requested view labels", () => {
-    expect([translate("en", "voronoiView"), translate("en", "graphView"), translate("en", "treeView")]).toEqual(["Voronoi view", "Graph view", "Tree view"]);
-    expect([translate("es", "voronoiView"), translate("es", "graphView"), translate("es", "treeView")]).toEqual(["Vista Voronoi", "Vista Grafo", "Vista Árbol"]);
-    expect([translate("en", "mobileVoronoiView"), translate("en", "mobileGraphView"), translate("en", "mobileTreeView")]).toEqual(["Voronoi", "Graph", "Tree"]);
-    expect([translate("es", "mobileVoronoiView"), translate("es", "mobileGraphView"), translate("es", "mobileTreeView")]).toEqual(["Voronoi", "Grafo", "Árbol"]);
+    expect([translate("en", "voronoiView"), translate("en", "graphView"), translate("en", "treeView")]).toEqual(["Leaf view", "Map view", "Text view"]);
+    expect([translate("es", "voronoiView"), translate("es", "graphView"), translate("es", "treeView")]).toEqual(["Vista Hoja", "Vista Mapa", "Vista Texto"]);
+    expect([translate("en", "mobileVoronoiView"), translate("en", "mobileGraphView"), translate("en", "mobileTreeView")]).toEqual(["Leaf", "Map", "Text"]);
+    expect([translate("es", "mobileVoronoiView"), translate("es", "mobileGraphView"), translate("es", "mobileTreeView")]).toEqual(["Hoja", "Mapa", "Texto"]);
   });
 
   it("uses localized creation labels", () => {

@@ -20,7 +20,7 @@ export function sceneFromDrawing(root: OrganizerNode, drawing: Drawing, width: n
     centerX: sceneWidth / 2, centerY: sceneHeight / 2, outerRadiusX: sceneWidth / 2, outerRadiusY: sceneHeight / 2 } };
 }
 
-/** Prototype-only cache and worker lifecycle. No frame-by-frame simulation enters the UI. */
+/** Cached graph geometry. No frame-by-frame simulation enters the UI. */
 export class LayoutSession {
   busy = false;
   notice = "";

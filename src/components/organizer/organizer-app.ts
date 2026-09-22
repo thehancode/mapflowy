@@ -10,6 +10,7 @@ import {
 import { MarkShortcut } from "../../lib/organizer/mark-shortcut";
 import type { OrganizerView } from "./view-switcher";
 import type { GraphNavigationAdapter, OrganizerSession } from "./navigation-extension";
+import { LayoutController } from "../mobile-graph/layout-controller";
 
 const treeLevelSymbols = ["●", "◆", "■", "▲"] as const;
 const treeLevelColors = ["#e45745", "#db8437", "#c2a12f", "#79a944", "#3e9f70", "#329a98", "#4089c7", "#5d70c5", "#8860bd", "#ad5da5", "#c65e7b", "#a46d52"] as const;
@@ -23,7 +24,12 @@ const viewShortcuts: Partial<Record<string, OrganizerView>> = { "1": "voronoi", 
 @customElement("organizer-app")
 export class OrganizerApp extends LitElement {
   @property({ attribute: false }) session?: OrganizerSession;
-  @property({ attribute: false }) graphNavigation?: GraphNavigationAdapter;
+  private graphController?: LayoutController;
+  private attachedGraph?: GraphNavigationAdapter;
+  private get graphNavigation(): GraphNavigationAdapter | undefined {
+    if (this.view !== "tree") return undefined;
+    return this.graphController ??= new LayoutController("balloon", () => this.requestUpdate());
+  }
   private configRepository = createUserConfigRepository({ storage: { getItem: () => null, setItem: () => {} } });
   private readonly initialConfig = this.configRepository.load();
   private tutorialRepository = createTutorialRepository({ storage: null });
@@ -79,15 +85,15 @@ export class OrganizerApp extends LitElement {
     .language-toggle { min-width: 2.5rem; justify-content: center; padding: 0 .55rem !important; }
     .icon-button svg, .context-toolbar svg, .sidebar-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
     .sidebar-toggle { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ink); cursor: pointer; transition: background-color .14s ease; }
-    .node-actions { position: absolute; z-index: 12; left: 1rem; bottom: 1rem; display: flex; align-items: center; gap: .45rem; }
-    .node-actions.with-navigation { flex-direction: column; }
+    .node-actions { position: absolute; z-index: 12; left: 1rem; bottom: 1rem; display: flex; flex-direction: column; align-items: center; gap: .45rem; }
+    .node-actions .map-toggle { display: grid; width: 3.25rem; height: 3.25rem; }
     .node-actions button:disabled { opacity: .35; cursor: default; }
     .quick-action-button { display: inline-flex; align-items: center; gap: .55rem; min-height: 2rem; padding: .42rem .7rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel); color: var(--muted); box-shadow: 0 8px 24px var(--shadow); backdrop-filter: blur(16px); font-size: .72rem; font-weight: 700; cursor: pointer; transition: background-color .14s ease; }
     .quick-action-button kbd { color: var(--ink); }
     .add-node-button { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; min-height: 3.25rem; padding: 0; border-radius: 50%; color: var(--ink); }
     .add-node-button svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; pointer-events: none; }
     .sidebar-toggle:hover, .quick-action-button:hover { background: var(--row-hover); }
-    .map-sidebar { position: absolute; top: calc(100% + .45rem); left: 1rem; display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: 50dvh; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
+    .map-sidebar { position: fixed; bottom: 8.4rem; left: 1rem; display: flex; flex-direction: column; width: min(310px, calc(100vw - 2rem)); max-height: min(50dvh, calc(100dvh - 14rem)); overflow: hidden; border: 1px solid var(--panel-border); border-radius: 18px; background: var(--panel); box-shadow: 0 18px 52px var(--shadow); backdrop-filter: blur(18px); }
     .map-sidebar h2 { margin: 0; padding: .85rem 1rem; border-bottom: 1px solid var(--panel-border); background: color-mix(in srgb, #88afe0 18%, transparent); color: var(--ink); font-size: .72rem; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
     .map-list { min-height: 0; overflow-y: auto; padding: .2rem .55rem .65rem; }
     .map-row { display: flex; align-items: center; width: 100%; min-height: 42px; padding: .35rem .55rem; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; }
@@ -125,7 +131,7 @@ export class OrganizerApp extends LitElement {
     .tree-node text { fill: var(--ink); font-size: 12px; font-weight: 750; text-anchor: middle; paint-order: stroke; stroke: var(--background); stroke-width: 3px; cursor: text; user-select: none; }
     .add-ring { fill: none; stroke: var(--ink); stroke-width: 8; stroke-linecap: round; opacity: .12; cursor: crosshair; vector-effect: non-scaling-stroke; }
     .add-ring:hover { opacity: .65; }
-    .file-tree { min-height: 100%; padding: 1.1rem 1.1rem 5.5rem; }
+    .file-tree { min-height: 100%; padding: 1.1rem 1.1rem 9rem; }
     .file-row { display: flex; align-items: center; min-height: 44px; margin-left: calc(var(--depth) * 28px); padding: .35rem .65rem; border: 1px solid transparent; border-radius: 9px; cursor: pointer; }
     .file-row:hover { background: var(--row-hover); }
     .file-row.selected { border-color: var(--panel-border); background: var(--row-selected); box-shadow: 0 3px 12px var(--shadow); }
@@ -168,7 +174,7 @@ export class OrganizerApp extends LitElement {
       .sidebar-toggle { width: 2.25rem; height: 2.25rem; }
       .node-actions { left: .65rem; bottom: .65rem; }
       .shortcut-hints, .quick-action-button kbd { display: none; }
-      .map-sidebar { left: .5rem; width: min(310px, calc(100vw - 1rem)); }
+      .map-sidebar { position: fixed; top: auto; bottom: 8.05rem; left: .65rem; width: min(310px, calc(100vw - 1.3rem)); max-height: min(50dvh, calc(100dvh - 12rem)); }
       .file-tree { padding-top: .8rem; }
       .file-row { margin-left: calc(var(--depth) * 18px); }
       .tree-node text { font-size: 10px; cursor: pointer; pointer-events: none; }
@@ -195,7 +201,9 @@ export class OrganizerApp extends LitElement {
   }
 
   disconnectedCallback(): void {
-    this.graphNavigation?.disconnect();
+    this.attachedGraph?.disconnect();
+    this.attachedGraph = undefined;
+    this.graphController = undefined;
     document.removeEventListener("keydown", this.onKeyDown);
     document.removeEventListener("keydown", this.onMarkKeyDown, true);
     document.removeEventListener("pointerdown", this.resetMarkShortcut, true);
@@ -218,7 +226,12 @@ export class OrganizerApp extends LitElement {
   }
 
   protected updated(changed: PropertyValues): void {
-    this.graphNavigation?.attach(this);
+    const navigation = this.graphNavigation;
+    if (this.attachedGraph !== navigation) {
+      this.attachedGraph?.disconnect();
+      this.attachedGraph = navigation;
+      navigation?.attach(this);
+    }
     if (["selectedId", "view", "workspace", "tutorialOpen"].some((key) => changed.has(key))) this.resetMarkShortcut();
     if ((changed.has("draft") || this.graphNavigation?.createScene) && this.draft) requestAnimationFrame(() => {
       const input = this.renderRoot.querySelector<HTMLInputElement>("[data-draft]");
@@ -528,10 +541,11 @@ export class OrganizerApp extends LitElement {
     const parentEntry = findEntry(this.root, parent.id);
     if (!parentEntry) return;
     if (parentEntry.depth + 2 > MAX_TREE_LEVELS) { this.showDepthLimit(); return; }
+    const actualParent = parentEntry.node;
     const id = newNodeId(flattenTree(this.root).map(({ node }) => node.id));
-    const item: OrganizerNode = { id, name: "", children: [], colorIndex: newChildColorIndex(id, parent) };
-    parent.children.splice(insertionIndex, 0, item);
-    this.draft = { id: item.id, parentId: parent.id, restoreId, mode: "create" };
+    const item: OrganizerNode = { id, name: "", children: [], colorIndex: newChildColorIndex(id, actualParent) };
+    actualParent.children.splice(insertionIndex, 0, item);
+    this.draft = { id: item.id, parentId: actualParent.id, restoreId, mode: "create" };
     this.selectedId = item.id; this.treeCycles.clear(); this.requestUpdate();
     if (this.view === "tree") this.graphFocusId = item.id;
     this.setStatus(this.t("newElementReady"));
@@ -573,19 +587,19 @@ export class OrganizerApp extends LitElement {
     if (!name) { this.cancelDraft(); return; }
     const item = findEntry(this.root, this.draft.id)?.node;
     if (!item) { this.cancelDraft(); return; }
-    const { mode, parentId } = this.draft;
+    const { mode, parentId, restoreId } = this.draft;
     item.name = name; const id = item.id; this.draft = null;
     if (this.tutorialOpen) {
       this.tutorialDocument = { ...this.tutorialDocument, customTextIds: [...new Set([...this.tutorialDocument.customTextIds, id])] };
     }
-    const entry = this.view === "file" && mode === "create"
+    const entry = this.view === "file" && mode === "create" && restoreId !== parentId
       ? findEntry(this.root, id)!
       : findEntry(this.root, mode === "create" ? parentId : id)!;
     this.selectedId = entry.node.id;
     if (this.view === "tree") this.graphFocusId = entry.node.id;
     if (this.view !== "voronoi") this.path = entry.path;
     this.persist(); this.setStatus(this.t(mode === "edit" ? "renamed" : "created", { name }));
-    if (this.view === "file" && mode === "create") this.focusNode(id);
+    if (this.view === "file" && mode === "create") this.focusNode(entry.node.id);
   }
 
   private cancelDraft(): void {
@@ -810,7 +824,7 @@ export class OrganizerApp extends LitElement {
           ${addMarker ? svg`<g class="add-child-control" role="button" tabindex="0" aria-label=${this.t("openAndAddChild", { name: item.name })} clip-path=${`url(#edge-cell-${index})`} @click=${activateEdge} @dblclick=${(event: Event) => event.stopPropagation()} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") activateEdge(event); }}><circle class="add-child-target" cx=${addMarker.x} cy=${addMarker.y} r="30"></circle><text class="add-child-sign" x=${addMarker.x} y=${addMarker.y} aria-hidden="true">+</text></g>` : nothing}
           ${selected ? svg`<path class="selection" d=${roundedPolygonPath(polygon)} clip-path=${`url(#edge-cell-${index})`}></path>` : nothing}
           <path class="cell-outline" d=${roundedPolygonPath(polygon)}></path>
-          ${item.id !== this.draft?.id ? svg`<text class="cell-label" x=${center.x} y=${center.y} font-size=${label.size} dy=".35em" @dblclick=${(event: MouseEvent) => { event.stopPropagation(); this.beginEdit(item.id); }}>${label.text}</text>` : nothing}
+          ${item.id !== this.draft?.id ? svg`<text class="cell-label" x=${center.x} y=${center.y} font-size=${label.size} dy=".35em" @dblclick=${(event: MouseEvent) => { event.stopPropagation(); if (this.width > 600) this.beginEdit(item.id); }}>${label.text}</text>` : nothing}
         </g>`;
       })}
     </svg>${this.renderFloatingEditor(sites, polygons)}`;
@@ -850,8 +864,8 @@ export class OrganizerApp extends LitElement {
             <title>${entry.node.name}</title>
             <circle class="core" r=${radius} fill=${this.graphNavigation?.nodeFill?.(entry) ?? NODE_PALETTE[nodeColorIndex(entry.node)]}></circle>
             ${selected ? svg`<circle r=${radius + 4} fill="none" stroke="var(--selection)" stroke-width="2"></circle>` : nothing}
-            ${this.graphNavigation ? nothing : svg`<path class="add-ring" d=${radialArcPath(radius + 8, 225, -45, true)} aria-label=${this.t("addChildren")} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}><title>${this.t("addChildren")}</title></path>`}
-            <text style=${this.graphNavigation ? "pointer-events:auto" : ""} y=${labelY} @click=${(event: MouseEvent) => { event.stopPropagation(); if (this.graphNavigation) this.chooseTreeNode(entry); else this.beginEdit(entry.node.id); }}>${labelLines.map((line, index) => svg`<tspan x="0" dy=${labelLines.length === 1 ? "0" : index === 0 ? "-.55em" : "1.1em"}>${line}</tspan>`)}</text>
+            ${this.width <= 600 ? nothing : svg`<path class="add-ring" d=${radialArcPath(radius + 8, 225, -45, true)} aria-label=${this.t("addChildren")} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}><title>${this.t("addChildren")}</title></path>`}
+            <text style=${this.graphNavigation ? "pointer-events:auto" : ""} y=${labelY} @click=${(event: MouseEvent) => { event.stopPropagation(); if (this.width <= 600) this.chooseTreeNode(entry); else this.beginEdit(entry.node.id); }}>${labelLines.map((line, index) => svg`<tspan x="0" dy=${labelLines.length === 1 ? "0" : index === 0 ? "-.55em" : "1.1em"}>${line}</tspan>`)}</text>
           </g>`;
         })}
       </g>
@@ -912,7 +926,6 @@ export class OrganizerApp extends LitElement {
     return html`<aside class="shortcut-hints" aria-label=${this.t("contextualShortcuts")}>
       ${this.view === "voronoi" ? this.path.length === 1 ? hint(["Enter"], "viewNode") : hint(["Shift", "Enter"], "goBack") : nothing}
       ${this.view === "file" ? html`${hint(["Enter"], "shortcutAddSibling")}${canMoveUp ? hint(["Shift", "Tab"], "shortcutOutdent") : hint(["Tab"], "shortcutIndent")}` : nothing}
-      ${this.renderShortcutHint([this.t("spaceKey"), this.t("spaceKey")], "markNode", false)}
     </aside>`;
   }
 
@@ -942,7 +955,6 @@ export class OrganizerApp extends LitElement {
     return html`<main class="workspace" lang=${this.language} tabindex="0" role="application" aria-label="Mapflowy" @pointerdown=${(event: PointerEvent) => this.workspacePointerDown(event)}>
       <header class="app-header">
         <div class="header-brand">
-          <button class="sidebar-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { if (this.newMapNamingId) { this.focusPendingMapName(); return; } this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
           <span class="app-logo" aria-hidden="true"><img src="/icon.svg" width="80" height="34" alt="" draggable="false" /></span>
           ${this.renderSidebar()}
         </div>
@@ -951,7 +963,10 @@ export class OrganizerApp extends LitElement {
       </header>
       <section class="visualization" aria-label=${this.t("displayMode")}>
         <div class="stage ${this.view === "file" ? "file" : ""}" @mousedown=${this.onNodeMouseDown} @auxclick=${this.onNodeAuxClick}>${this.view === "voronoi" ? this.renderVoronoi() : this.view === "tree" ? this.renderTree() : this.renderFileTree()}</div>
-        <div class="node-actions ${this.graphNavigation && this.view === "tree" ? "with-navigation" : ""}">${this.view === "tree" ? this.graphNavigation?.actions?.() ?? nothing : nothing}<button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}>${this.renderIcon("plus")}</button></div>
+        <div class="node-actions">
+          <button class="sidebar-toggle quick-action-button add-node-button map-toggle" aria-expanded=${this.sidebarOpen} aria-label=${this.t(this.sidebarOpen ? "closeMapList" : "openMapList")} title=${this.t("mapList")} @click=${() => { if (this.newMapNamingId) { this.focusPendingMapName(); return; } this.sidebarOpen = !this.sidebarOpen; this.contextMenu = null; }}>${this.renderIcon("menu")}</button>
+          <button class="quick-action-button add-node-button" aria-label=${this.t("addNode")} title=${this.t("addNode")} @click=${this.addChildToSelected}>${this.renderIcon("plus")}</button>
+        </div>
         ${this.renderContextToolbar()}
         ${this.renderShortcutHints()}
         ${this.depthLimitOpen ? html`<div class="modal-backdrop" @click=${(event: MouseEvent) => { if (event.target === event.currentTarget) this.depthLimitOpen = false; }}>
