@@ -8,6 +8,7 @@ import {
   translate, voronoiPathForSelection, voronoiPolygons,
 } from "../../lib/organizer";
 import { MarkShortcut } from "../../lib/organizer/mark-shortcut";
+import { hierarchyTarget } from "../../lib/organizer/hierarchy-navigation";
 import type { OrganizerView } from "./view-switcher";
 import type { GraphNavigationAdapter, OrganizerSession } from "./navigation-extension";
 import { LayoutController } from "../mobile-graph/layout-controller";
@@ -56,7 +57,6 @@ export class OrganizerApp extends LitElement {
   @state() private graphFocusId = "";
   private repository = createRepository({ storage: null });
   private resizeObserver?: ResizeObserver;
-  private treeCycles = new Map<string, number>();
   private toastTimer?: number;
   private readonly markShortcut = new MarkShortcut();
   private resetMarkShortcut = (): void => this.markShortcut.reset();
@@ -299,7 +299,7 @@ export class OrganizerApp extends LitElement {
       this.view = "tree";
       this.onboardingRepository.markSeen();
     }
-    this.path = [this.root]; this.selectedId = this.root.id; this.graphFocusId = this.root.id; this.treeCycles.clear();
+    this.path = [this.root]; this.selectedId = this.root.id; this.graphFocusId = this.root.id;
     this.setStatus(this.t("loaded", { name: this.root.name }));
   }
 
@@ -315,7 +315,7 @@ export class OrganizerApp extends LitElement {
   }
 
   private resetToRoot(message: string): void {
-    this.path = [this.root]; this.selectedId = this.root.id; this.graphFocusId = this.root.id; this.draft = null; this.contextMenu = null; this.treeCycles.clear();
+    this.path = [this.root]; this.selectedId = this.root.id; this.graphFocusId = this.root.id; this.draft = null; this.contextMenu = null;
     this.setStatus(message);
   }
 
@@ -405,7 +405,6 @@ export class OrganizerApp extends LitElement {
     this.newMapNamingId = null;
     this.pendingMapRestore = undefined;
     this.sidebarOpen = false;
-    this.treeCycles.clear();
     this.persistMaps();
     this.setStatus(this.t("newMapCancelled"));
     this.focusNode(this.selectedId);
@@ -482,7 +481,7 @@ export class OrganizerApp extends LitElement {
     const name = entry.node.name;
     entry.parent.children = entry.parent.children.filter((node) => node.id !== id);
     const parent = findEntry(this.root, entry.parent.id)!;
-    this.path = parent.path; this.selectedId = parent.node.id; this.graphFocusId = parent.node.id; this.treeCycles.clear(); this.persist();
+    this.path = parent.path; this.selectedId = parent.node.id; this.graphFocusId = parent.node.id; this.persist();
     this.setStatus(this.t("removed", { name }));
   }
 
@@ -546,7 +545,7 @@ export class OrganizerApp extends LitElement {
     const item: OrganizerNode = { id, name: "", children: [], colorIndex: newChildColorIndex(id, actualParent) };
     actualParent.children.splice(insertionIndex, 0, item);
     this.draft = { id: item.id, parentId: actualParent.id, restoreId, mode: "create" };
-    this.selectedId = item.id; this.treeCycles.clear(); this.requestUpdate();
+    this.selectedId = item.id; this.requestUpdate();
     if (this.view === "tree") this.graphFocusId = item.id;
     this.setStatus(this.t("newElementReady"));
   }
@@ -626,7 +625,7 @@ export class OrganizerApp extends LitElement {
     if (!canPlaceSubtreeAtDepth(selected.node, selected.depth + 1)) { this.showDepthLimit(); return; }
     const siblings = selected.parent.children; const newParent = siblings[selected.index - 1];
     siblings.splice(selected.index, 1); newParent.children.push(selected.node);
-    this.path = findEntry(this.root, selected.node.id)!.path; this.treeCycles.clear(); this.persist();
+    this.path = findEntry(this.root, selected.node.id)!.path; this.persist();
     this.setStatus(this.t("nowChildOf", { name: selected.node.name, parent: newParent.name }));
   }
 
@@ -638,7 +637,7 @@ export class OrganizerApp extends LitElement {
     selected.parent.children.splice(selected.index, 1);
     const parentIndex = parentEntry.parent.children.findIndex((node) => node.id === parentEntry.node.id);
     parentEntry.parent.children.splice(parentIndex + 1, 0, selected.node);
-    this.path = findEntry(this.root, selected.node.id)!.path; this.treeCycles.clear(); this.persist();
+    this.path = findEntry(this.root, selected.node.id)!.path; this.persist();
     this.setStatus(this.t("movedUp", { name: selected.node.name }));
   }
 
@@ -658,20 +657,9 @@ export class OrganizerApp extends LitElement {
   }
 
   private moveTree(key: string): void {
-    const layout = this.graphNavigation?.createScene?.(this.root, this.width, this.height).layout ?? (this.width <= 600 ? mobileGraphScene(this.root, this.width, this.height).layout : radialTreeLayout(this.root, this.width, this.height));
-    const selected = layout.nodes.find((entry) => entry.node.id === this.selectedId) ?? layout.nodes.find((entry) => entry.node.id === this.current.id);
-    if (!selected) return;
-    const allowed = new Set([...(selected.parent ? [selected.parent.id] : []), ...selected.node.children.map((node) => node.id)]);
-    const direction = directions[key];
-    const candidates = layout.nodes.map((entry, order) => ({ entry, order, dx: entry.x - selected.x, dy: entry.y - selected.y }))
-      .filter(({ entry, dx, dy }) => allowed.has(entry.node.id) && dx * direction.x + dy * direction.y > 1e-5)
-      .map(({ entry, order, dx, dy }) => { const distance = Math.hypot(dx, dy); return { entry, order, distance, alignment: (dx * direction.x + dy * direction.y) / distance }; })
-      .sort((a, b) => b.alignment - a.alignment || a.distance - b.distance || a.order - b.order);
-    if (!candidates.length) return;
-    const cycleKey = `${selected.node.id}:${key}`, cycle = (this.treeCycles.get(cycleKey) ?? 0) % candidates.length;
-    this.treeCycles.set(cycleKey, (cycle + 1) % candidates.length);
-    const next = candidates[cycle].entry; this.graphNavigation?.select(next.node.id); this.path = next.path; this.selectedId = next.node.id; this.graphFocusId = next.node.id;
-    this.setStatus(this.t("currentNode", { name: next.node.name }) + (candidates.length > 1 ? this.t("connectedChoice", { current: cycle + 1, total: candidates.length }) : ""));
+    const positions = this.graphNavigation?.createScene?.(this.root, this.width, this.height).layout.nodes;
+    const next = hierarchyTarget(this.root, this.selectedId, key, positions);
+    if (next) this.chooseTreeNode(next);
   }
 
   private moveFile(key: string): void {
