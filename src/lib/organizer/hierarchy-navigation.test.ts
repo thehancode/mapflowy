@@ -11,6 +11,45 @@ function fixture(): OrganizerNode {
 }
 
 describe("Map hierarchy navigation", () => {
+  it("enters the earlier middle child below and above the root", () => {
+    for (const [count, expected] of [[0, undefined], [1, "child-0"], [2, "child-0"], [3, "child-1"], [4, "child-1"], [5, "child-2"]] as const) {
+      const root = fixture(), parent = root.children[0];
+      parent.children = Array.from({ length: count }, (_, i) => ({ id: `child-${i}`, name: "Child", children: [] }));
+      for (const y of [0, 200]) {
+        const positions = [{ node: root, x: 0, y: 100 }, { node: parent, x: 0, y }];
+        expect(hierarchyTarget(root, "a", y < 100 ? "ArrowUp" : "ArrowDown", positions)?.node.id).toBe(expected);
+      }
+    }
+  });
+  it("reverses the sibling cycle for direct children below the root", () => {
+    const root = fixture();
+    for (const shift of [0, -800]) {
+      const positions = [{ node: root, x: 0, y: 100 + shift }, { node: root.children[0], x: 0, y: 200 + shift }];
+      for (const y of [0, 100, 200]) {
+        positions[1].y = y + shift;
+        expect(hierarchyTarget(root, "a", "ArrowLeft", positions)?.node.id).toBe(y > 100 ? "b" : "c");
+        expect(hierarchyTarget(root, "a", "ArrowRight", positions)?.node.id).toBe(y > 100 ? "c" : "b");
+        expect(hierarchyTarget(root, "b", "ArrowRight", positions)?.node.id).toBe("c");
+        expect(hierarchyTarget(root, "c", "ArrowRight", positions)?.node.id).toBe("a");
+      }
+    }
+  });
+  it("uses the immediate parent's position for deeper sibling navigation", () => {
+    const root = fixture(), parent = root.children[0];
+    parent.children.push({ id: "a2", name: "A2", children: [] }, { id: "a3", name: "A3", children: [] });
+    const positions = [
+      { node: root, x: 0, y: 100 },
+      { node: parent, x: 0, y: 200 },
+      { node: parent.children[0], x: 0, y: 0 },
+    ];
+    expect(hierarchyTarget(root, "a1", "ArrowLeft", positions)?.node.id).toBe("a2");
+    expect(hierarchyTarget(root, "a1", "ArrowRight", positions)?.node.id).toBe("a3");
+    expect(hierarchyTarget(root, "a1", "ArrowDown", positions)?.node.id).toBe("a");
+    positions[1].y = 0;
+    positions[2].y = 200;
+    expect(hierarchyTarget(root, "a1", "ArrowLeft", positions)?.node.id).toBe("a3");
+    expect(hierarchyTarget(root, "a1", "ArrowRight", positions)?.node.id).toBe("a2");
+  });
   it("navigates from the root spatially, ignoring grandchildren and breaking ties by distance", () => {
     const root = fixture();
     const positions = [
@@ -47,7 +86,7 @@ describe("Map hierarchy navigation", () => {
       }
     }
   });
-  it("enters the first child and returns to the parent", () => {
+  it("enters an only child and returns to the parent", () => {
     const root = fixture();
     expect(hierarchyTarget(root, "a", "ArrowDown")?.node.id).toBe("a1");
     expect(hierarchyTarget(root, "a1", "ArrowUp")?.node.id).toBe("a");

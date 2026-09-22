@@ -26,10 +26,14 @@ export function hierarchyTarget(root: OrganizerNode, selectedId: string, key: st
   const childKey = aboveRoot ? "ArrowUp" : "ArrowDown";
   let target: OrganizerNode | undefined;
   if (key === parentKey) target = selected.parent ?? undefined;
-  else if (key === childKey) target = selected.node.children[0];
+  else if (key === childKey) target = selected.node.children[Math.floor((selected.node.children.length - 1) / 2)];
   else if ((key === "ArrowLeft" || key === "ArrowRight") && selected.parent) {
     const siblings = selected.parent.children;
-    const offset = key === "ArrowLeft" ? -1 : 1;
+    const reference = selected.parent.id === root.id
+      ? selectedPosition
+      : positions.find(entry => entry.node.id === selected.parent!.id);
+    const belowRoot = !!rootPosition && !!reference && reference.y > rootPosition.y + 1e-5;
+    const offset = (key === "ArrowLeft" ? -1 : 1) * (belowRoot ? -1 : 1);
     target = siblings[(selected.index + offset + siblings.length) % siblings.length];
   }
   return target && target.id !== selectedId ? findEntry(root, target.id) : null;
