@@ -9,29 +9,30 @@ const entry = (x: number, y: number, depth: number, index: number): LayoutEntry 
 
 describe("balloon presentation", () => {
   const controller = new LayoutController("balloon", () => {});
-  it("renders a cubic connector between the exact node centers", () => {
+  it("renders a straight connector between the exact node centers", () => {
     const path = controller.linkPath(entry(10, 20, 0, 0), entry(110, 70, 1, 1));
-    expect(path).toMatch(/^M 10 20 C /);
-    expect(path).toMatch(/, 110 70$/);
-    expect(path).not.toContain(" L ");
+    expect(path).toBe("M 10 20 L 110 70");
   });
   it("chooses stable shades from eight interpolated colors per repeating level pair", () => {
     const at = (depth: number, id: string) => controller.nodeFill({ ...entry(0, 0, depth, 0), node: { id, name: id, children: [] } });
-    const hue = (fill: string) => Number(/^hsl\((\d+)/.exec(fill)![1]);
     const ids = Array.from({ length: 80 }, (_, index) => `node-${index}`);
     const palettes = [
-      [216, 195, 174, 153, 132, 111, 78, 45],
-      [12, 357, 342, 327, 312, 297, 282, 267],
-      [174, 197, 220, 243, 266, 289, 312, 335],
-      [78, 60, 42, 24, 6, 348, 330, 312],
+      ["#f38b70", "#df9eb6"],
+      ["#e5a665", "#efc65d"],
+      ["#88afe0", "#b99bdf"],
+      ["#c5d36c", "#71c1b2"],
+      ["#71c1b2", "#88afe0"],
     ];
     palettes.forEach((palette, depth) => {
-      const fills = ids.map(id => at(depth, id));
+      const fills = ids.map(id => at(depth + 5, id));
       expect(new Set(fills).size).toBe(8);
-      expect(fills.every(fill => fill.endsWith(" 58% 62%)"))).toBe(true);
-      expect(fills.every(fill => palette.includes(hue(fill)))).toBe(true);
-      expect(at(depth, "stable-node")).toBe(at(depth, "stable-node"));
+      expect(fills).toContain(palette[0]);
+      expect(fills).toContain(palette[1]);
+      expect(ids.map(id => at(depth + 10, id))).toEqual(fills);
+      if (depth > 0) expect(ids.map(id => at(depth, id))).toEqual(fills);
     });
-    expect(at(4, "stable-node")).toBe(at(0, "stable-node"));
+    expect(ids.every(id => at(0, id) === "#f38b70")).toBe(true);
+    // The blue/lavender midpoint matches the independently inspected color demo.
+    expect(ids.map(id => at(2, id))).toContain("#9095df");
   });
 });

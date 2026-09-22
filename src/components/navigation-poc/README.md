@@ -1,11 +1,12 @@
 # Disposable balloon-tree experiment
 
 Open `/test/1` for balloon subtree-disk packing followed by validated inward
-compaction. Connections use narrow cubic curves after node placement. The first
-four levels use blue-to-golden, coral-to-lavender, teal-to-pink, and
-citron-green-to-magenta palettes. Each pair produces eight
-evenly interpolated colors with 58% saturation and 62% lightness. Nodes choose a
-stable pseudo-random shade using their ID, and levels after four repeat the pairs.
+compaction. Connections are straight lines between node centers. The five
+level palettes are coral-to-pink, orange-to-golden, blue-to-lavender,
+citron-to-teal, and teal-to-blue. Each pair produces eight shortest-path HSL
+shades matching the color study, including both endpoints. The root uses coral;
+other nodes choose a stable pseudo-random shade using their ID.
+Levels after five repeat the pairs.
 
 The page embeds the real organizer with its own in-memory Storage implementation
 and fresh deterministic demo. Reload or Reset discards edits. No production
@@ -32,9 +33,8 @@ pulls whole branches inward while checking geometry.
 
 Node placement validates straight parent-child corridors, collinear edge
 overlaps, occupied-box overlaps, and edges through unrelated footprints. If
-necessary, a validated tidy fallback is shown with a notice. Curves are applied
-after placement and kept to a narrow corridor; they are a visual experiment and
-do not carry the straight-layout crossing guarantee.
+necessary, a validated tidy fallback is shown with a notice. Rendered straight
+connections follow the validated layout corridors.
 
 Scene caching ignores selection and camera changes, but invalidates on structure,
 labels, or viewport changes.
