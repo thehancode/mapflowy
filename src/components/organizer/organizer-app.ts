@@ -55,6 +55,7 @@ export class OrganizerApp extends LitElement {
   private readonly markShortcut = new MarkShortcut();
   private resetMarkShortcut = (): void => this.markShortcut.reset();
   private pendingMapRestore?: { workspace: OrganizerWorkspaceDocument; tutorialOpen: boolean; path: OrganizerNode[]; selectedId: string };
+  private focusedDraftInput?: HTMLInputElement;
 
   static styles = css`
     :host { --ink: #171a17; --selection: var(--ink); --background: #e8e7de; --file-background: #f4f3ec; --panel: rgba(250,249,244,.88); --panel-border: rgba(23,26,23,.13); --shadow: rgba(23,26,23,.12); --muted: #686a63; --cell-gap: #faf9f4; --add-child-idle: rgba(255,255,255,.08); --add-child-hover: rgba(255,255,255,.18); --row-hover: rgba(255,255,255,.58); --row-selected: #fff; --editor: rgba(255,255,255,.96); --dialog: #faf9f4; --kbd: #fff; display: block; width: 100%; height: 100dvh; min-height: 0; overflow: hidden; color: var(--ink); background: var(--background); color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -219,8 +220,10 @@ export class OrganizerApp extends LitElement {
   protected updated(changed: PropertyValues): void {
     this.graphNavigation?.attach(this);
     if (["selectedId", "view", "workspace", "tutorialOpen"].some((key) => changed.has(key))) this.resetMarkShortcut();
-    if (changed.has("draft") && this.draft) requestAnimationFrame(() => {
+    if ((changed.has("draft") || this.graphNavigation?.createScene) && this.draft) requestAnimationFrame(() => {
       const input = this.renderRoot.querySelector<HTMLInputElement>("[data-draft]");
+      if (!input || (!changed.has("draft") && input === this.focusedDraftInput)) return;
+      this.focusedDraftInput = input;
       input?.focus();
       if (this.draft?.mode === "edit") input?.select();
     });
@@ -641,7 +644,7 @@ export class OrganizerApp extends LitElement {
   }
 
   private moveTree(key: string): void {
-    const layout = this.width <= 600 ? mobileGraphScene(this.root, this.width, this.height).layout : radialTreeLayout(this.root, this.width, this.height);
+    const layout = this.graphNavigation?.createScene?.(this.root, this.width, this.height).layout ?? (this.width <= 600 ? mobileGraphScene(this.root, this.width, this.height).layout : radialTreeLayout(this.root, this.width, this.height));
     const selected = layout.nodes.find((entry) => entry.node.id === this.selectedId) ?? layout.nodes.find((entry) => entry.node.id === this.current.id);
     if (!selected) return;
     const allowed = new Set([...(selected.parent ? [selected.parent.id] : []), ...selected.node.children.map((node) => node.id)]);
@@ -653,7 +656,7 @@ export class OrganizerApp extends LitElement {
     if (!candidates.length) return;
     const cycleKey = `${selected.node.id}:${key}`, cycle = (this.treeCycles.get(cycleKey) ?? 0) % candidates.length;
     this.treeCycles.set(cycleKey, (cycle + 1) % candidates.length);
-    const next = candidates[cycle].entry; this.path = next.path; this.selectedId = next.node.id; this.graphFocusId = next.node.id;
+    const next = candidates[cycle].entry; this.graphNavigation?.select(next.node.id); this.path = next.path; this.selectedId = next.node.id; this.graphFocusId = next.node.id;
     this.setStatus(this.t("currentNode", { name: next.node.name }) + (candidates.length > 1 ? this.t("connectedChoice", { current: cycle + 1, total: candidates.length }) : ""));
   }
 
@@ -781,7 +784,13 @@ export class OrganizerApp extends LitElement {
     if (entry) this.chooseTreeNode(entry);
   }
 
-  private chooseTreeNode(entry: Pick<LayoutEntry, "node" | "path">): void { this.graphNavigation?.select(entry.node.id); this.path = entry.path; this.selectedId = entry.node.id; this.graphFocusId = entry.node.id; this.setStatus(this.t("nowCurrentLevel", { name: entry.node.name })); }
+  private chooseTreeNode(entry: Pick<LayoutEntry, "node" | "path">): void {
+    // An asynchronous embedded layout can briefly display the previous tree.
+    const current = this.graphNavigation?.createScene ? findEntry(this.root, entry.node.id) : entry;
+    if (!current) return;
+    this.graphNavigation?.select(current.node.id); this.path = current.path; this.selectedId = current.node.id; this.graphFocusId = current.node.id;
+    this.setStatus(this.t("nowCurrentLevel", { name: current.node.name }));
+  }
 
   private renderVoronoi() {
     const items = visibleItems(this.current), points = circleLayout(items.length);
@@ -824,22 +833,22 @@ export class OrganizerApp extends LitElement {
 
   private renderTree() {
     const mobile = this.width <= 600 || !!this.graphNavigation;
-    const scene = mobile
+    const scene = this.graphNavigation?.createScene?.(this.root, this.width, this.height) ?? (mobile
       ? mobileGraphScene(this.root, this.width, this.height)
-      : { layout: radialTreeLayout(this.root, this.width, this.height), width: this.width, height: this.height };
+      : { layout: radialTreeLayout(this.root, this.width, this.height), width: this.width, height: this.height });
     const layout = scene.layout;
     const automatic = mobile ? graphCameraForSelection(scene, this.graphFocusId || this.selectedId, this.width, this.height) : { x: 0, y: 0 };
     const camera = this.graphNavigation?.resolve({ scene, width: this.width, height: this.height, selectedId: this.selectedId, focusId: this.graphFocusId, automatic, editing: !!this.draft }) ?? automatic;
     return html`<svg data-graph-canvas style=${this.graphNavigation ? "touch-action:none" : ""} viewBox="0 0 ${this.width} ${this.height}" role="img" aria-label=${this.t("completeProjectGraph")}>
       <g class="graph-camera ${this.draft || this.graphNavigation?.instant ? "instant" : ""}" style=${`transform:translate(${-camera.x}px,${-camera.y}px)`}>
-        ${layout.links.map(({ source, target }) => svg`<path class="tree-link" fill="none" d=${radialLinkPath(source, target, layout.centerX, layout.centerY, layout.outerRadiusX, layout.outerRadiusY)}></path>`)}
+        ${layout.links.map(({ source, target }) => svg`<path class="tree-link" fill="none" d=${this.graphNavigation?.linkPath?.(source, target) ?? radialLinkPath(source, target, layout.centerX, layout.centerY, layout.outerRadiusX, layout.outerRadiusY)}></path>`)}
         ${layout.nodes.map((entry) => {
           const current = entry.node.id === this.current.id, selected = entry.node.id === this.selectedId, radius = entry.depth === 0 ? GRAPH_ROOT_RADIUS : 19;
           const labelLines = graphNodeLabelLines(entry.node.name);
           const labelY = entry.depth === 0 ? 39 : 34;
           return svg`<g class="tree-node ${current ? "current" : ""} ${entry.node.marked ? "marked" : ""}" data-node-id=${entry.node.id} tabindex="0" role="button" aria-label=${this.t("nodeLevel", { name: entry.node.name, level: entry.depth + 1 })} transform="translate(${entry.x} ${entry.y})" @click=${() => this.chooseTreeNode(entry)} @contextmenu=${(event: MouseEvent) => this.openContextMenu(event, "element", entry.node.id)} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") this.chooseTreeNode(entry); }}>
             <title>${entry.node.name}</title>
-            <circle class="core" r=${radius} fill=${NODE_PALETTE[nodeColorIndex(entry.node)]}></circle>
+            <circle class="core" r=${radius} fill=${this.graphNavigation?.nodeFill?.(entry) ?? NODE_PALETTE[nodeColorIndex(entry.node)]}></circle>
             ${selected ? svg`<circle r=${radius + 4} fill="none" stroke="var(--selection)" stroke-width="2"></circle>` : nothing}
             ${this.graphNavigation ? nothing : svg`<path class="add-ring" d=${radialArcPath(radius + 8, 225, -45, true)} aria-label=${this.t("addChildren")} @click=${(event: Event) => { event.stopPropagation(); this.chooseTreeNode(entry); this.beginDraft(entry.node); }}><title>${this.t("addChildren")}</title></path>`}
             <text style=${this.graphNavigation ? "pointer-events:auto" : ""} y=${labelY} @click=${(event: MouseEvent) => { event.stopPropagation(); if (this.graphNavigation) this.chooseTreeNode(entry); else this.beginEdit(entry.node.id); }}>${labelLines.map((line, index) => svg`<tspan x="0" dy=${labelLines.length === 1 ? "0" : index === 0 ? "-.55em" : "1.1em"}>${line}</tspan>`)}</text>

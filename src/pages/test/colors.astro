@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Balloon tree color study</title>
+    <link rel="icon" href="/icon.svg" />
+  </head>
+  <body>
+    <main>
+      <aside class="controls">
+        <header>
+          <p class="eyebrow">Color study</p>
+          <h1>Balloon tree levels</h1>
+          <p>Pick the endpoints. Each pair automatically generates eight shades.</p>
+        </header>
+
+        <section class="level" data-level="0">
+          <div class="level-heading"><strong>Level 1</strong><span>Blue pair · repeats at level 6</span></div>
+          <div class="pickers">
+            <label>From <input class="start" type="color" list="production-colors" value="#88afe0" /><output>#88afe0</output></label>
+            <label>To <input class="end" type="color" list="production-colors" value="#88afe0" /><output>#88afe0</output></label>
+          </div>
+          <div class="shades" aria-label="Level 1 shades"></div>
+        </section>
+
+        <section class="level" data-level="1">
+          <div class="level-heading"><strong>Level 2</strong><span>Orange → golden</span></div>
+          <div class="pickers">
+            <label>From <input class="start" type="color" list="production-colors" value="#e5a665" /><output>#e5a665</output></label>
+            <label>To <input class="end" type="color" list="production-colors" value="#efc65d" /><output>#efc65d</output></label>
+          </div>
+          <div class="shades" aria-label="Level 2 shades"></div>
+        </section>
+
+        <section class="level" data-level="2">
+          <div class="level-heading"><strong>Level 3</strong><span>Lavender → pink</span></div>
+          <div class="pickers">
+            <label>From <input class="start" type="color" list="production-colors" value="#b99bdf" /><output>#b99bdf</output></label>
+            <label>To <input class="end" type="color" list="production-colors" value="#df9eb6" /><output>#df9eb6</output></label>
+          </div>
+          <div class="shades" aria-label="Level 3 shades"></div>
+        </section>
+
+        <section class="level" data-level="3">
+          <div class="level-heading"><strong>Level 4</strong><span>Citron → teal</span></div>
+          <div class="pickers">
+            <label>From <input class="start" type="color" list="production-colors" value="#c5d36c" /><output>#c5d36c</output></label>
+            <label>To <input class="end" type="color" list="production-colors" value="#71c1b2" /><output>#71c1b2</output></label>
+          </div>
+          <div class="shades" aria-label="Level 4 shades"></div>
+        </section>
+
+        <section class="level" data-level="4">
+          <div class="level-heading"><strong>Level 5</strong><span>Blue → lavender</span></div>
+          <div class="pickers">
+            <label>From <input class="start" type="color" list="production-colors" value="#88afe0" /><output>#88afe0</output></label>
+            <label>To <input class="end" type="color" list="production-colors" value="#b99bdf" /><output>#b99bdf</output></label>
+          </div>
+          <div class="shades" aria-label="Level 5 shades"></div>
+        </section>
+      </aside>
+
+      <datalist id="production-colors">
+        <option value="#f38b70">Coral</option>
+        <option value="#e5a665">Orange</option>
+        <option value="#efc65d">Golden</option>
+        <option value="#c5d36c">Citron green</option>
+        <option value="#71c1b2">Teal</option>
+        <option value="#88afe0">Blue</option>
+        <option value="#b99bdf">Lavender</option>
+        <option value="#df9eb6">Pink</option>
+      </datalist>
+
+      <section class="canvas" aria-label="Asymmetric balloon tree color preview">
+        <div class="canvas-heading">
+          <strong>Asymmetric balloon tree</strong>
+          <span>Colors update live</span>
+        </div>
+        <svg id="tree" role="img" aria-label="Five-level asymmetric balloon tree"></svg>
+      </section>
+    </main>
+
+    <script is:inline>
+      const SVG_NS = "http://www.w3.org/2000/svg";
+      const tree = {
+        id: "root", children: [
+          { id: "a", children: [
+            { id: "a1", children: [{ id: "a11", children: [
+              { id: "a111", children: [{ id: "a1111", children: [] }, { id: "a1112", children: [] }] },
+              { id: "a112", children: [{ id: "a1121", children: [] }] },
+            ] }] },
+            { id: "a2", children: [] },
+            { id: "a3", children: [{ id: "a31", children: [] }] },
+          ] },
+          { id: "b", children: [
+            { id: "b1", children: [{ id: "b11", children: [{ id: "b111", children: [{ id: "b1111", children: [] }] }] }] },
+            { id: "b2", children: [{ id: "b21", children: [] }, { id: "b22", children: [
+              { id: "b221", children: [{ id: "b2211", children: [] }, { id: "b2212", children: [] }] },
+              { id: "b222", children: [{ id: "b2221", children: [] }] },
+            ] }] },
+          ] },
+          { id: "c", children: [{ id: "c1", children: [{ id: "c11", children: [] }, { id: "c12", children: [{ id: "c121", children: [{ id: "c1211", children: [] }] }] }] }] },
+          { id: "d", children: [
+            { id: "d1", children: [] },
+            { id: "d2", children: [{ id: "d21", children: [{ id: "d211", children: [{ id: "d2111", children: [] }, { id: "d2112", children: [] }] }] }] },
+            { id: "d3", children: [] },
+            { id: "d4", children: [{ id: "d41", children: [] }] },
+          ] },
+          { id: "e", children: [{ id: "e1", children: [] }, { id: "e2", children: [] }] },
+        ],
+      };
+
+      const depthById = new Map();
+      const edges = [];
+      function indexTree(node, depth = 0, parent = null) {
+        depthById.set(node.id, depth);
+        if (parent) edges.push([parent.id, node.id]);
+        node.children.forEach(child => indexTree(child, depth + 1, node));
+      }
+      indexTree(tree);
+
+      function pack(node, isRoot = false) {
+        const positions = new Map([[node.id, { x: 0, y: 0 }]]);
+        const ownRadius = node.id === "root" ? 56 : 44;
+        if (!node.children.length) return { positions, radius: ownRadius };
+        const children = node.children.map(child => pack(child));
+        const total = children.reduce((sum, child) => sum + child.radius, 0);
+        const sector = isRoot ? Math.PI * 2 : Math.PI * 0.9;
+        let cursor = -sector / 2;
+        const angles = children.map(child => {
+          const span = sector * child.radius / total;
+          const angle = cursor + span / 2;
+          cursor += span;
+          return angle;
+        });
+        // This study favors large, readable color disks over conservative
+        // subtree footprints. A fixed local ring keeps nested balloons compact.
+        const distance = isRoot ? 260 : 155 + Math.max(0, children.length - 2) * 18;
+        let radius = ownRadius;
+        children.forEach((child, index) => {
+          const cosine = Math.cos(angles[index]);
+          const sine = Math.sin(angles[index]);
+          for (const [id, point] of child.positions) {
+            const x = cosine * (point.x + distance) - sine * point.y;
+            const y = sine * (point.x + distance) + cosine * point.y;
+            positions.set(id, { x, y });
+            radius = Math.max(radius, Math.hypot(x, y) + 44);
+          }
+        });
+        return { positions, radius };
+      }
+
+      const positions = pack(tree, true).positions;
+      const coordinates = [...positions.values()];
+      const bounds = {
+        left: Math.min(...coordinates.map(point => point.x)) - 70,
+        right: Math.max(...coordinates.map(point => point.x)) + 70,
+        top: Math.min(...coordinates.map(point => point.y)) - 70,
+        bottom: Math.max(...coordinates.map(point => point.y)) + 70,
+      };
+
+      const svg = document.querySelector("#tree");
+      svg.setAttribute("viewBox", `${bounds.left} ${bounds.top} ${bounds.right - bounds.left} ${bounds.bottom - bounds.top}`);
+
+      function svgElement(name, attributes) {
+        const element = document.createElementNS(SVG_NS, name);
+        Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+        return element;
+      }
+
+      const connectorLayer = svgElement("g", { class: "connectors" });
+      edges.forEach(([sourceId, targetId]) => {
+        const source = positions.get(sourceId);
+        const target = positions.get(targetId);
+        const dx = target.x - source.x;
+        const dy = target.y - source.y;
+        const bend = ((targetId.charCodeAt(targetId.length - 1) % 2) ? 1 : -1) * Math.min(24, Math.hypot(dx, dy) * 0.1);
+        const length = Math.max(1, Math.hypot(dx, dy));
+        const nx = -dy / length * bend;
+        const ny = dx / length * bend;
+        connectorLayer.append(svgElement("path", {
+          d: `M ${source.x} ${source.y} C ${source.x + dx * 0.34 + nx} ${source.y + dy * 0.34 + ny}, ${source.x + dx * 0.68 + nx} ${source.y + dy * 0.68 + ny}, ${target.x} ${target.y}`,
+        }));
+      });
+      svg.append(connectorLayer);
+
+      const nodeLayer = svgElement("g", { class: "nodes" });
+      for (const [id, point] of positions) {
+        nodeLayer.append(svgElement("circle", {
+          class: "tree-node",
+          "data-id": id,
+          "data-depth": depthById.get(id),
+          cx: point.x,
+          cy: point.y,
+          r: id === "root" ? 48 : 38,
+        }));
+      }
+      svg.append(nodeLayer);
+
+      function hexToHsl(hex) {
+        const red = parseInt(hex.slice(1, 3), 16) / 255;
+        const green = parseInt(hex.slice(3, 5), 16) / 255;
+        const blue = parseInt(hex.slice(5, 7), 16) / 255;
+        const maximum = Math.max(red, green, blue);
+        const minimum = Math.min(red, green, blue);
+        const delta = maximum - minimum;
+        let hue = 0;
+        if (delta) {
+          if (maximum === red) hue = 60 * (((green - blue) / delta) % 6);
+          else if (maximum === green) hue = 60 * ((blue - red) / delta + 2);
+          else hue = 60 * ((red - green) / delta + 4);
+        }
+        if (hue < 0) hue += 360;
+        const lightness = (maximum + minimum) / 2;
+        const saturation = delta ? delta / (1 - Math.abs(2 * lightness - 1)) : 0;
+        return [hue, saturation, lightness];
+      }
+
+      function hslToHex(hue, saturation, lightness) {
+        const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+        const section = hue / 60;
+        const x = chroma * (1 - Math.abs(section % 2 - 1));
+        const candidates = section < 1 ? [chroma, x, 0] : section < 2 ? [x, chroma, 0] : section < 3 ? [0, chroma, x]
+          : section < 4 ? [0, x, chroma] : section < 5 ? [x, 0, chroma] : [chroma, 0, x];
+        const offset = lightness - chroma / 2;
+        return `#${candidates.map(value => Math.round((value + offset) * 255).toString(16).padStart(2, "0")).join("")}`;
+      }
+
+      function shadesBetween(startHex, endHex) {
+        const start = hexToHsl(startHex);
+        const end = hexToHsl(endHex);
+        const hueDistance = ((end[0] - start[0] + 540) % 360) - 180;
+        return Array.from({ length: 8 }, (_, index) => {
+          const progress = index / 7;
+          const hue = (start[0] + hueDistance * progress + 360) % 360;
+          return hslToHex(hue, start[1] + (end[1] - start[1]) * progress, start[2] + (end[2] - start[2]) * progress);
+        });
+      }
+
+      function stableShade(id) {
+        let hash = 2166136261;
+        for (const character of id) {
+          hash ^= character.charCodeAt(0);
+          hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0) % 8;
+      }
+
+      function updateColors() {
+        const palettes = [];
+        document.querySelectorAll(".level").forEach((section, depth) => {
+          const startInput = section.querySelector(".start");
+          const endInput = section.querySelector(".end");
+          const start = startInput.value;
+          const palette = endInput ? shadesBetween(start, endInput.value) : [start];
+          palettes[depth] = palette;
+          section.querySelectorAll("input").forEach(input => { input.closest("label").querySelector("output").value = input.value; });
+          const shades = section.querySelector(".shades");
+          shades.replaceChildren(...palette.map((color, index) => {
+            const item = document.createElement("div");
+            item.className = "shade";
+            item.title = `Shade ${index + 1}: ${color}`;
+            item.innerHTML = `<span style="background:${color}"></span><code>${color}</code>`;
+            return item;
+          }));
+        });
+        document.querySelectorAll(".tree-node").forEach(node => {
+          const depth = Number(node.dataset.depth);
+          const palette = palettes[depth % palettes.length];
+          const shade = depth === 0 ? 0 : stableShade(node.dataset.id) % palette.length;
+          node.setAttribute("fill", palette[shade]);
+        });
+      }
+
+      document.querySelectorAll('input[type="color"]').forEach(input => input.addEventListener("input", updateColors));
+      updateColors();
+    </script>
+  </body>
+</html>
+
+<style>
+  :global(*) { box-sizing: border-box; }
+  :global(html, body) { margin: 0; min-width: 900px; min-height: 100%; background: #f2efe9; color: #292722; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+  main { display: grid; grid-template-columns: minmax(470px, 35vw) 1fr; height: 100vh; }
+  .controls { overflow-y: auto; padding: 2rem; background: #fffdf8; border-right: 1px solid #ddd7cb; }
+  header { margin-bottom: 1.5rem; }
+  .eyebrow { margin: 0 0 .35rem; color: #766f64; font-size: .72rem; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+  h1 { margin: 0; font-family: Georgia, serif; font-size: 2rem; font-weight: 500; }
+  header > p:last-child { margin: .55rem 0 0; color: #6e685e; font-size: .9rem; }
+  .level { padding: 1rem 0 1.15rem; border-top: 1px solid #e8e2d8; }
+  .level-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .65rem; }
+  .level-heading strong { font-size: .92rem; }
+  .level-heading span { color: #777066; font-size: .78rem; }
+  .pickers { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+  label { display: grid; grid-template-columns: auto 2.25rem 4.4rem; align-items: center; gap: .45rem; color: #6b655b; font-size: .72rem; }
+  input[type="color"] { width: 2.25rem; height: 1.75rem; padding: 2px; border: 1px solid #cfc7bb; border-radius: .25rem; background: white; cursor: pointer; }
+  output, code { color: #45413a; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .66rem; text-transform: uppercase; }
+  .shades { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: .3rem; margin-top: .7rem; }
+  :global(.shade) { min-width: 0; }
+  :global(.shade span) { display: block; height: 2.5rem; border: 1px solid rgba(30, 25, 20, .1); border-radius: .2rem; }
+  :global(.shade code) { display: block; margin-top: .25rem; overflow: hidden; font-size: .55rem; text-align: center; }
+  .canvas { position: relative; min-width: 0; overflow: hidden; background: radial-gradient(circle at 50% 45%, #fffdfa 0, #f3efe8 72%); }
+  .canvas-heading { position: absolute; z-index: 1; top: 1.5rem; left: 1.75rem; display: grid; gap: .2rem; pointer-events: none; }
+  .canvas-heading strong { font-family: Georgia, serif; font-size: 1.15rem; font-weight: 500; }
+  .canvas-heading span { color: #777066; font-size: .75rem; }
+  #tree { display: block; width: 100%; height: 100%; padding: 4rem 2rem 2rem; }
+  :global(.connectors path) { fill: none; stroke: #bdb5a9; stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  :global(.tree-node) { stroke: rgba(57, 51, 45, .32); stroke-width: 2; vector-effect: non-scaling-stroke; }
+</style>

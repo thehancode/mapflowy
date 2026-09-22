@@ -1,5 +1,5 @@
 import type { OrganizerApp } from "./organizer-app";
-import type { OrganizerWorkspaceDocument, Point } from "../../lib/organizer";
+import type { OrganizerNode, OrganizerWorkspaceDocument, Point, LayoutEntry } from "../../lib/organizer";
 import type { MobileGraphScene } from "../../lib/organizer/graph-camera";
 
 /** Optional embedding hooks; the normal organizer requires neither. */
@@ -15,6 +15,9 @@ export interface GraphFrame {
 }
 export interface GraphNavigationAdapter {
   readonly instant: boolean;
+  createScene?(root: OrganizerNode, width: number, height: number): MobileGraphScene;
+  linkPath?(source: LayoutEntry, target: LayoutEntry): string;
+  nodeFill?(entry: LayoutEntry): string;
   resolve(frame: GraphFrame): Point;
   select(id: string): void;
   attach(app: OrganizerApp): void;

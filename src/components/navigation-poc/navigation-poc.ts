@@ -2,13 +2,13 @@ import { LitElement, css, html } from "lit";
 import { customElement } from "lit/decorators.js";
 import { keyed } from "lit/directives/keyed.js";
 import "../organizer/organizer-app";
-import { NavigationController } from "./controller";
+import { LayoutController } from "./layout-controller";
 import { demoSession } from "./demo";
 
 @customElement("navigation-poc")
 export class NavigationPoc extends LitElement {
   private session = demoSession();
-  private controller?: NavigationController;
+  private controller?: LayoutController;
   private generation = 0;
   static styles = css`
     :host { display:flex; flex-direction:column; height:100dvh; overflow:hidden; font:13px system-ui,sans-serif; background:#e8e7de; color:#171a17; }
@@ -20,6 +20,7 @@ export class NavigationPoc extends LitElement {
     p { margin:3px 0; font-size:12px; }
     .instructions { display:flex; align-items:center; gap:8px; height:52px; }
     .instructions p { flex:1; }
+    .notice { min-height:16px; margin:0; font-size:11px; }
     organizer-app { flex:1; height:0; min-height:0; }
   `;
   private reset = () => {
@@ -27,11 +28,11 @@ export class NavigationPoc extends LitElement {
     this.session = demoSession(); this.generation++; this.requestUpdate();
   };
   render() {
-    this.controller ??= new NavigationController(() => this.requestUpdate());
+    this.controller ??= new LayoutController("balloon", () => this.requestUpdate());
     return html`<nav aria-label="Navigation experiments"><div class="row">
-      <strong>Free drag + Back</strong>
+      <strong>Balloon tree</strong>
       <button @click=${this.reset}>Reset</button>
-    </div><div class="instructions"><p>Drag empty space. Use the back arrow above + to restore your previous view.</p>
-    </div></nav>${keyed(this.generation, html`<organizer-app .session=${this.session} .graphNavigation=${this.controller}></organizer-app>`)}`;
+    </div><div class="instructions"><p>Children orbit their parents. Drag empty space; use Back above +.</p>
+    </div><p class="notice" role="status">${this.controller.layouts.notice}</p></nav>${keyed(this.generation, html`<organizer-app .session=${this.session} .graphNavigation=${this.controller}></organizer-app>`)}`;
   }
 }

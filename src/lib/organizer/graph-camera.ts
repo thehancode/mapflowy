@@ -43,7 +43,7 @@ export function mobileGraphScene(root: OrganizerNode, viewportWidth: number, vie
   let width = viewportWidth, height = viewportHeight;
   let layout = radialTreeLayout(root, width, height);
   while (graphIsCrowded(layout) && scale < MAX_SCALE) {
-    scale = Math.min(MAX_SCALE, scale * 1.2);
+    scale = Math.min(MAX_SCALE, scale * 1.05);
     width = viewportWidth * scale;
     height = viewportHeight * scale;
     layout = radialTreeLayout(root, width, height);
